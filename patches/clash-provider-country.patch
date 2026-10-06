@@ -1,8 +1,131 @@
+diff --git a/package-lock.json b/package-lock.json
+index 0fbec5b..ea9bf46 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -11,7 +11,8 @@
+         "esbuild-register": "^3.6.0",
+         "hono": "^4.10.7",
+         "ioredis": "^5.8.2",
+-        "js-yaml": "^4.1.1"
++        "js-yaml": "^4.1.1",
++        "re2js": "2.8.6"
+       },
+       "devDependencies": {
+         "@cloudflare/vitest-pool-workers": "^0.10.11",
+@@ -2119,6 +2120,15 @@
+         "node": "^10 || ^12 || >=14"
+       }
+     },
++    "node_modules/re2js": {
++      "version": "2.8.6",
++      "resolved": "https://registry.npmjs.org/re2js/-/re2js-2.8.6.tgz",
++      "integrity": "sha512-xLgQil4kIUCrAzVk9fRSkxkFNwmygLFjVxXrLc65aE1F0+Zsb8rxumFBy4XKyvgMCTL6kilDq3EZ0piE2dP/Dg==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=18.0.0"
++      }
++    },
+     "node_modules/redis-errors": {
+       "version": "1.2.0",
+       "resolved": "https://registry.npmjs.org/redis-errors/-/redis-errors-1.2.0.tgz",
+diff --git a/package.json b/package.json
+index 6345993..908a4bb 100644
+--- a/package.json
++++ b/package.json
+@@ -23,7 +23,8 @@
+     "esbuild-register": "^3.6.0",
+     "hono": "^4.10.7",
+     "ioredis": "^5.8.2",
+-    "js-yaml": "^4.1.1"
++    "js-yaml": "^4.1.1",
++    "re2js": "2.8.6"
+   },
+   "engines": {
+     "node": ">=18"
+diff --git a/src/app/createApp.jsx b/src/app/createApp.jsx
+index 8dbd9e9..4d150b4 100644
+--- a/src/app/createApp.jsx
++++ b/src/app/createApp.jsx
+@@ -16,6 +16,7 @@ import { ShortLinkService } from '../services/shortLinkService.js';
+ import { ConfigStorageService } from '../services/configStorageService.js';
+ import { ServiceError, MissingDependencyError } from '../services/errors.js';
+ import { normalizeRuntime } from '../runtime/runtimeConfig.js';
++import { loadRemoteRouting, applyRemoteRouting } from '../services/remoteConfigService.js';
+ import { PREDEFINED_RULE_SETS, SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11, generateSubconverterConfig } from '../config/index.js';
+ 
+ const DEFAULT_USER_AGENT = 'curl/7.74.0';
+@@ -141,6 +142,8 @@ export function createApp(bindings = {}) {
+             const externalUiDownloadUrl = c.req.query('external_ui_download_url');
+             const configId = c.req.query('configId');
+             const lang = c.get('lang');
++            const excludeNodes = c.req.query('exclude') || '';
++            const remoteConfigUrl = c.req.query('remote_config') || '';
+ 
+             let baseConfig;
+             if (configId) {
+@@ -161,13 +164,16 @@ export function createApp(bindings = {}) {
+                 externalUiDownloadUrl,
+                 includeAutoSelect
+             );
++            builder.setNodeExclusion(excludeNodes);
++            const remoteContent = remoteConfigUrl ? await loadRemoteRouting(remoteConfigUrl) : null;
+             await builder.build();
+             const userinfo = builder.getSubscriptionUserinfo();
+             const headers = { 'Content-Type': 'text/yaml; charset=utf-8' };
+             if (userinfo) {
+                 headers['subscription-userinfo'] = userinfo;
+             }
+-            return c.text(builder.formatConfig(), 200, headers);
++            const output = builder.formatConfig();
++            return c.text(remoteContent !== null ? applyRemoteRouting(builder, remoteContent) : output, 200, headers);
+         } catch (error) {
+             return handleError(c, error, runtime.logger);
+         }
+@@ -268,6 +274,7 @@ export function createApp(bindings = {}) {
+ 
+         const proxylist = inputString.split('\n');
+         const finalProxyList = [];
++        let subscriptionUserinfo;
+         const userAgent = c.req.query('ua') || getRequestHeader(c.req, 'User-Agent') || DEFAULT_USER_AGENT;
+         const headers = { 'User-Agent': userAgent };
+ 
+@@ -278,6 +285,10 @@ export function createApp(bindings = {}) {
+             if (trimmedProxy.startsWith('http://') || trimmedProxy.startsWith('https://')) {
+                 try {
+                     const response = await fetch(trimmedProxy, { method: 'GET', headers });
++                    const fetchedUserinfo = response.headers.get('subscription-userinfo');
++                    if (fetchedUserinfo && subscriptionUserinfo === undefined) {
++                        subscriptionUserinfo = fetchedUserinfo;
++                    }
+                     const text = await response.text();
+                     let processed = tryDecodeSubscriptionLines(text, { decodeUriComponent: true });
+                     if (!Array.isArray(processed)) processed = [processed];
+@@ -297,7 +308,11 @@ export function createApp(bindings = {}) {
+             return c.text('Missing config parameter', 400);
+         }
+ 
+-        return c.text(encodeBase64(finalString));
++        const responseHeaders = {};
++        if (subscriptionUserinfo) {
++            responseHeaders['subscription-userinfo'] = subscriptionUserinfo;
++        }
++        return c.text(encodeBase64(finalString), 200, responseHeaders);
+     });
+ 
+     app.get('/shorten-v2', async (c) => {
 diff --git a/src/builders/BaseConfigBuilder.js b/src/builders/BaseConfigBuilder.js
-index 0da4b82..4ef20e0 100644
+index 0da4b82..220a0da 100644
 --- a/src/builders/BaseConfigBuilder.js
 +++ b/src/builders/BaseConfigBuilder.js
-@@ -102,6 +102,7 @@ export class BaseConfigBuilder {
+@@ -22,6 +22,7 @@ export class BaseConfigBuilder {
+     async build() {
+         const customItems = await this.parseCustomItems();
+         this.addCustomItems(customItems);
++        this.filterNodes();
+         this.addSelectors();
+         return this.formatConfig();
+     }
+@@ -102,6 +103,7 @@ export class BaseConfigBuilder {
                              // If format is compatible with target client, use as provider
                              if (this.isCompatibleProviderFormat(format)) {
                                  this.providerUrls.push(originalUrl);
@@ -10,7 +133,7 @@ index 0da4b82..4ef20e0 100644
                                  continue;  // Skip parsing, will be used as provider
                              }
  
-@@ -186,6 +187,10 @@ export class BaseConfigBuilder {
+@@ -186,6 +188,14 @@ export class BaseConfigBuilder {
          return false;  // Default: no provider support
      }
  
@@ -18,14 +141,18 @@ index 0da4b82..4ef20e0 100644
 +        // Provider metadata is optional and remains specific to the target client.
 +    }
 +
++    filterNodes() {
++        // Each client controls how its inline nodes and remote providers are filtered.
++    }
++
      getAutoProviderDescriptors(reservedNames = []) {
          if (this.autoProviderDescriptors) {
              return this.autoProviderDescriptors;
 diff --git a/src/builders/ClashConfigBuilder.js b/src/builders/ClashConfigBuilder.js
-index fe03684..68f65ca 100644
+index fe03684..7834234 100644
 --- a/src/builders/ClashConfigBuilder.js
 +++ b/src/builders/ClashConfigBuilder.js
-@@ -1,7 +1,7 @@
+@@ -1,12 +1,13 @@
  import yaml from 'js-yaml';
  import { CLASH_CONFIG, generateRules, generateClashRuleSets, getOutbounds, PREDEFINED_RULE_SETS, DIRECT_DEFAULT_RULES } from '../config/index.js';
  import { BaseConfigBuilder } from './BaseConfigBuilder.js';
@@ -34,26 +161,36 @@ index fe03684..68f65ca 100644
  import { addProxyWithDedup } from './helpers/proxyHelpers.js';
  import { buildSelectorMembers, buildNodeSelectMembers, buildCustomRuleMembers, uniqueNames } from './helpers/groupBuilder.js';
  import { emitClashRules, sanitizeClashProxyGroups } from './helpers/clashConfigUtils.js';
-@@ -56,6 +56,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+ import { normalizeGroupName, findGroupIndexByName } from './helpers/groupNameUtils.js';
+ import { InvalidConfigError } from '../services/errors.js';
++import { compileNodePattern } from '../services/nodeFilter.js';
+ 
+ /**
+  * Check if the client supports MRS (Meta Rule Set) format
+@@ -56,6 +57,9 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
          this.selectedRules = selectedRules;
          this.customRules = customRules;
          this.countryGroupNames = [];
 +        this.providerCountryGroups = {};
++        this.providerNodeNames = [];
++        this.nodeExclusion = null;
          this.manualGroupName = null;
          this.enableClashUI = enableClashUI;
          this.externalController = externalController;
-@@ -71,6 +72,24 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -71,6 +75,40 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
          return format === 'clash';
      }
  
 +    registerProviderContent(content) {
-+        if (!this.groupByCountry) return;
 +        // Keep provider refresh intact; only names are needed to classify its nodes.
 +        try {
 +            const config = yaml.load(content);
 +            if (!Array.isArray(config?.proxies)) return;
 +            config.proxies.forEach(proxy => {
 +                if (typeof proxy?.name !== 'string' || !proxy.name.trim()) return;
++                if (this.nodeExclusion?.test(proxy.name)) return;
++                if (!this.providerNodeNames.includes(proxy.name)) this.providerNodeNames.push(proxy.name);
++                if (!this.groupByCountry) return;
 +                const country = parseCountryFromNodeName(proxy.name);
 +                if (!country) return;
 +                const group = this.providerCountryGroups[country.name] ||= { ...country, proxies: [] };
@@ -64,10 +201,50 @@ index fe03684..68f65ca 100644
 +        }
 +    }
 +
++    setNodeExclusion(pattern) {
++        this.nodeExclusion = compileNodePattern(pattern);
++    }
++
++    getProviderNodeNames() {
++        return this.providerNodeNames;
++    }
++
++    filterNodes() {
++        if (this.nodeExclusion && Array.isArray(this.config.proxies)) {
++            this.config.proxies = this.config.proxies.filter(proxy => !this.nodeExclusion.test(proxy?.name));
++        }
++    }
++
      /**
       * Generate proxy-providers configuration from collected URLs
       * @returns {object} - proxy-providers object
-@@ -470,6 +489,9 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -84,6 +122,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+                 url: url,
+                 path: `./proxy_providers/${name}.yaml`,
+                 interval: 3600,
++                ...(this.nodeExclusion ? { 'exclude-filter': this.nodeExclusion.source } : {}),
+                 'health-check': {
+                     enable: true,
+                     url: 'https://www.gstatic.com/generate_204',
+@@ -412,7 +451,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+                     };
+                     // Add 'use' field if we have proxy-providers
+                     const providerNames = this.getAllProviderNames();
+-                    if (providerNames.length > 0) {
++                    if (providerNames.length > 0 && !this.groupByCountry) {
+                         group.use = providerNames;
+                     }
+                     this.config['proxy-groups'].push(group);
+@@ -459,7 +498,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+         };
+         // Add 'use' field if we have proxy-providers
+         const providerNames = this.getAllProviderNames();
+-        if (providerNames.length > 0) {
++        if (providerNames.length > 0 && !this.groupByCountry) {
+             group.use = providerNames;
+         }
+         this.config['proxy-groups'].push(group);
+@@ -470,6 +509,9 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
          const countryGroups = groupProxiesByCountry(proxies, {
              getName: proxy => this.getProxyName(proxy)
          });
@@ -77,7 +254,7 @@ index fe03684..68f65ca 100644
  
          const existingNames = new Set((this.config['proxy-groups'] || []).map(g => normalizeGroupName(g?.name)).filter(Boolean));
  
-@@ -483,7 +505,6 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -483,7 +525,6 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                      type: 'select',
                      proxies: manualProxyNames
                  };
@@ -85,7 +262,7 @@ index fe03684..68f65ca 100644
                  const providerNames = this.getAllProviderNames();
                  if (providerNames.length > 0) {
                      group.use = providerNames;
-@@ -509,10 +530,13 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -509,10 +550,13 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                      interval: 300,
                      lazy: false
                  };
@@ -101,11 +278,417 @@ index fe03684..68f65ca 100644
                  }
                  this.config['proxy-groups'].push(group);
                  existingNames.add(norm);
+diff --git a/src/components/Form.jsx b/src/components/Form.jsx
+index 31218b9..a4a3f01 100644
+--- a/src/components/Form.jsx
++++ b/src/components/Form.jsx
+@@ -123,6 +123,23 @@ export const Form = (props) => {
+   {/* Advanced Options Content */ }
+   <div x-show="showAdvanced" {...{'x-transition:enter': 'transition ease-out duration-300', 'x-transition:enter-start': 'opacity-0 transform -translate-y-4', 'x-transition:enter-end': 'opacity-100 transform translate-y-0', 'x-transition:leave': 'transition ease-in duration-200', 'x-transition:leave-start': 'opacity-100 transform translate-y-0', 'x-transition:leave-end': 'opacity-0 transform -translate-y-4'}} class="space-y-6">
+ 
++    <section class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-5">
++      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{t('clashSubscriptionOptions')}</h3>
++      <div>
++        <label for="excludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('excludeNodes')}</label>
++        <input id="excludeNodes" name="exclude" type="text" x-model="excludeNodes" maxlength="512" placeholder="超时|官网|异常|重置|剩余|套餐|收藏|邮箱" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
++        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('excludeNodesHelp')}</p>
++      </div>
++      <div>
++        <label for="remoteConfigUrl" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('remoteRoutingConfig')}</label>
++        <input id="remoteConfigUrl" name="remote_config" type="url" x-model="remoteConfigUrl" list="remote-routing-presets" placeholder="https://example.com/config.ini" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
++        <datalist id="remote-routing-presets">
++          <option value="https://raw.githubusercontent.com/youbin777/clash/refs/heads/main/ACL4SSR_Online_Full_MultiMode.ini">ACL4SSR MultiMode</option>
++        </datalist>
++        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('remoteRoutingHelp')}</p>
++      </div>
++    </section>
++
+     {/* Rule Selection */ }
+     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+       <div class="flex items-center justify-between mb-4">
+diff --git a/src/components/formLogic.js b/src/components/formLogic.js
+index 57f401f..1708179 100644
+--- a/src/components/formLogic.js
++++ b/src/components/formLogic.js
+@@ -99,6 +99,8 @@ export const formLogicFn = (t) => {
+             configValidationState: '',
+             configValidationMessage: '',
+             customUA: '',
++            excludeNodes: '',
++            remoteConfigUrl: '',
+             loading: false,
+             generatedLinks: null,
+             shortenedLinks: null,
+@@ -136,6 +138,8 @@ export const formLogicFn = (t) => {
+                 this.externalController = localStorage.getItem('externalController') || '';
+                 this.externalUiDownloadUrl = localStorage.getItem('externalUiDownloadUrl') || '';
+                 this.customUA = localStorage.getItem('userAgent') || '';
++                this.excludeNodes = localStorage.getItem('clashExcludeNodes') ?? '超时|官网|异常|重置|剩余|套餐|收藏|邮箱';
++                this.remoteConfigUrl = localStorage.getItem('clashRemoteConfigUrl') || '';
+                 this.configEditor = localStorage.getItem('configEditor') || '';
+                 this.configType = localStorage.getItem('configType') || 'singbox';
+                 this.customShortCode = localStorage.getItem('customShortCode') || '';
+@@ -162,6 +166,8 @@ export const formLogicFn = (t) => {
+                 });
+                 this.$watch('showAdvanced', val => localStorage.setItem('advancedToggle', val));
+                 this.$watch('groupByCountry', val => localStorage.setItem('groupByCountry', val));
++                this.$watch('excludeNodes', val => localStorage.setItem('clashExcludeNodes', val));
++                this.$watch('remoteConfigUrl', val => localStorage.setItem('clashRemoteConfigUrl', val));
+                 this.$watch('includeAutoSelect', val => localStorage.setItem('includeAutoSelect', val));
+                 this.$watch('enableClashUI', val => localStorage.setItem('enableClashUI', val));
+                 this.$watch('externalController', val => localStorage.setItem('externalController', val));
+@@ -347,6 +353,8 @@ export const formLogicFn = (t) => {
+                     this.generatedLinks = null;
+                     this.shortenedLinks = null;
+                     this.customShortCode = '';
++                    this.excludeNodes = '';
++                    this.remoteConfigUrl = '';
+                     // Also clear from localStorage
+                     localStorage.removeItem('customShortCode');
+                 }
+@@ -392,11 +400,14 @@ export const formLogicFn = (t) => {
+                     }
+ 
+                     const queryString = params.toString();
++                    const clashParams = new URLSearchParams(params);
++                    if (this.excludeNodes.trim()) clashParams.set('exclude', this.excludeNodes.trim());
++                    if (this.remoteConfigUrl.trim()) clashParams.set('remote_config', this.remoteConfigUrl.trim());
+ 
+                     this.generatedLinks = {
+                         xray: origin + '/xray?' + queryString,
+                         singbox: origin + '/singbox?' + queryString,
+-                        clash: origin + '/clash?' + queryString,
++                        clash: origin + '/clash?' + clashParams.toString(),
+                         surge: origin + '/surge?' + queryString
+                     };
+ 
+@@ -635,6 +646,8 @@ export const formLogicFn = (t) => {
+                 }
+ 
+                 const ua = params.get('ua');
++                this.excludeNodes = params.get('exclude') || '';
++                this.remoteConfigUrl = params.get('remote_config') || '';
+                 if (ua) {
+                     this.customUA = ua;
+                 }
+@@ -647,7 +660,7 @@ export const formLogicFn = (t) => {
+ 
+                 // Expand advanced options if any advanced settings are present
+                 if (selectedRules || customRules || this.groupByCountry || this.enableClashUI ||
+-                    externalController || externalUiDownloadUrl || ua || configId) {
++                    externalController || externalUiDownloadUrl || ua || configId || this.excludeNodes || this.remoteConfigUrl) {
+                     this.showAdvanced = true;
+                 }
+             }
+diff --git a/src/i18n/index.js b/src/i18n/index.js
+index 84ad13e..f89dd05 100644
+--- a/src/i18n/index.js
++++ b/src/i18n/index.js
+@@ -29,6 +29,11 @@ export const translations = {
+     shareUrls: '输入源',
+     urlPlaceholder: '支持粘贴：分享链接、Clash 配置、Sing-Box 配置、Surge 配置...',
+     advancedOptions: '高级选项',
++    clashSubscriptionOptions: 'Clash 订阅设置',
++    excludeNodes: '排除节点',
++    excludeNodesHelp: '按节点名称过滤，多个关键词用 | 分隔；支持正则。留空则保留全部节点。',
++    remoteRoutingConfig: '远程配置（可选）',
++    remoteRoutingHelp: '支持 HTTPS 地址的 ACL4SSR .ini 和 Clash YAML。启用后使用远程规则与策略组，节点仍来自上方订阅；页面规则选择仅用于其他格式。',
+     baseConfigSettings: '基础配置设置',
+     baseConfigTooltip: '在此处自定义您的基础配置',
+     saveConfig: '保存配置',
+@@ -192,6 +197,11 @@ export const translations = {
+     shareUrls: 'Input Source',
+     urlPlaceholder: 'Paste share links, Clash config, Sing-Box config, or Surge config...',
+     advancedOptions: 'Advanced Options',
++    clashSubscriptionOptions: 'Clash subscription options',
++    excludeNodes: 'Exclude nodes',
++    excludeNodesHelp: 'Filter node names with keywords separated by | or regular expressions. Leave empty to keep all nodes.',
++    remoteRoutingConfig: 'Remote configuration (optional)',
++    remoteRoutingHelp: 'Supports HTTPS ACL4SSR .ini and Clash YAML. Remote routing replaces the page rule selection for Clash; nodes still come from your subscriptions.',
+     baseConfigSettings: 'Base Config Settings',
+     baseConfigTooltip: 'Customize your base configuration here',
+     saveConfig: 'Save Config',
+@@ -348,6 +358,11 @@ export const translations = {
+     shareUrls: 'منبع ورودی',
+     urlPlaceholder: 'لینک‌های اشتراک، پیکربندی Clash، Sing-Box یا Surge را جایگذاری کنید...',
+     advancedOptions: 'گزینه‌های پیشرفته',
++    clashSubscriptionOptions: 'تنظیمات اشتراک Clash',
++    excludeNodes: 'حذف گره‌ها',
++    excludeNodesHelp: 'نام گره‌ها را با کلمات جداشده با | یا عبارت منظم فیلتر کنید. برای حفظ همه گره‌ها خالی بگذارید.',
++    remoteRoutingConfig: 'پیکربندی از راه دور (اختیاری)',
++    remoteRoutingHelp: 'از HTTPS، ACL4SSR .ini و Clash YAML پشتیبانی می‌کند. قوانین و گروه‌ها از فایل راه دور و گره‌ها از اشتراک شما دریافت می‌شوند.',
+     baseConfigSettings: 'تنظیمات پیکربندی پایه',
+     baseConfigTooltip: 'پیکربندی پایه خود را اینجا سفارشی کنید',
+     saveConfig: 'ذخیره پیکربندی',
+@@ -504,6 +519,11 @@ export const translations = {
+     shareUrls: 'Источник ввода',
+     urlPlaceholder: 'Вставьте ссылки, конфигурацию Clash, Sing-Box или Surge...',
+     advancedOptions: 'Расширенные настройки',
++    clashSubscriptionOptions: 'Настройки подписки Clash',
++    excludeNodes: 'Исключить узлы',
++    excludeNodesHelp: 'Фильтр имён: ключевые слова через | или регулярные выражения. Оставьте пустым, чтобы сохранить все узлы.',
++    remoteRoutingConfig: 'Удалённая конфигурация (необязательно)',
++    remoteRoutingHelp: 'Поддерживаются HTTPS, ACL4SSR .ini и Clash YAML. Правила и группы берутся из удалённого файла, узлы — из ваших подписок.',
+     baseConfigSettings: 'Базовые настройки конфигурации',
+     baseConfigTooltip: 'Настройте базовую конфигурацию здесь',
+     saveConfig: 'Сохранить конфигурацию',
+diff --git a/src/services/nodeFilter.js b/src/services/nodeFilter.js
+new file mode 100644
+index 0000000..ad911a3
+--- /dev/null
++++ b/src/services/nodeFilter.js
+@@ -0,0 +1,25 @@
++import { RE2JS } from 're2js';
++import { InvalidPayloadError } from './errors.js';
++
++export function compileNodePattern(source = '') {
++    if (!source) return null;
++    if (typeof source !== 'string' || source.length > 512) throw new InvalidPayloadError('Node filter must be at most 512 characters');
++    try {
++        const pattern = RE2JS.compile(source);
++        return { source, test: name => typeof name === 'string' && pattern.matcher(name).find() };
++    } catch (_) {
++        throw new InvalidPayloadError('Invalid node filter: use keywords separated by | or an RE2-compatible regular expression');
++    }
++}
++
++export function compileRemotePattern(source) {
++    const prefix = source.startsWith('(?i)') ? '(?i)' : '';
++    const raw = prefix ? source.slice(4) : source;
++    // This common Subconverter exclusion has a linear-time include/exclude equivalent.
++    const negative = raw.match(/^\^\(\?!\.\*\((.+)\)\)\.\*\$$/);
++    const include = negative ? '.*' : source;
++    const exclude = negative ? prefix + negative[1] : '';
++    const positivePattern = compileNodePattern(include);
++    const negativePattern = compileNodePattern(exclude);
++    return { include, exclude, test: name => positivePattern.test(name) && !negativePattern?.test(name) };
++}
+diff --git a/src/services/remoteConfigService.js b/src/services/remoteConfigService.js
+new file mode 100644
+index 0000000..cb21aff
+--- /dev/null
++++ b/src/services/remoteConfigService.js
+@@ -0,0 +1,193 @@
++import yaml from 'js-yaml';
++import { InvalidPayloadError } from './errors.js';
++import { compileNodePattern, compileRemotePattern } from './nodeFilter.js';
++import { createStableProviderName } from '../utils.js';
++
++const MAX_BYTES = 1024 * 1024;
++const GROUP_TYPES = new Set(['select', 'url-test', 'fallback', 'load-balance']);
++const SPECIAL_NAMES = ['DIRECT', 'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE'];
++
++function publicHttpsUrl(value) {
++    let url;
++    try { url = new URL(value); } catch (_) { throw new InvalidPayloadError('Remote configuration requires a valid HTTPS URL'); }
++    const host = url.hostname.toLowerCase();
++    if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443') ||
++        !host.includes('.') || host.startsWith('[') || /(^|\.)(localhost|local|internal)$/.test(host) ||
++        /^(0|10|127|169\.254|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(host) ||
++        /^(22[4-9]|23\d|24\d|25[0-5])\./.test(host)) {
++        throw new InvalidPayloadError('Remote configuration must use a public HTTPS address without embedded credentials');
++    }
++    return url;
++}
++
++export async function loadRemoteRouting(value) {
++    let url = publicHttpsUrl(value);
++    for (let hop = 0; hop <= 3; hop++) {
++        let response;
++        try { response = await fetch(url.toString(), { redirect: 'manual', signal: AbortSignal.timeout(10000) }); }
++        catch (_) { throw new InvalidPayloadError('Could not fetch remote configuration'); }
++        if ([301, 302, 303, 307, 308].includes(response.status)) {
++            const location = response.headers.get('location');
++            if (!location || hop === 3) throw new InvalidPayloadError('Invalid remote configuration redirect');
++            url = publicHttpsUrl(new URL(location, url).toString());
++            continue;
++        }
++        if (!response.ok) throw new InvalidPayloadError(`Remote configuration returned HTTP ${response.status}`);
++        if (Number(response.headers.get('content-length')) > MAX_BYTES) throw new InvalidPayloadError('Remote configuration exceeds 1 MiB');
++        const reader = response.body?.getReader();
++        if (!reader) throw new InvalidPayloadError('Remote configuration is empty');
++        const decoder = new TextDecoder();
++        let total = 0, text = '';
++        while (true) {
++            const { value: chunk, done } = await reader.read();
++            if (done) break;
++            total += chunk.byteLength;
++            if (total > MAX_BYTES) { await reader.cancel(); throw new InvalidPayloadError('Remote configuration exceeds 1 MiB'); }
++            text += decoder.decode(chunk, { stream: true });
++        }
++        return text + decoder.decode();
++    }
++    throw new InvalidPayloadError('Too many remote configuration redirects');
++}
++
++function parseIni(text, builder) {
++    let inCustom = false;
++    const declarations = [], ruleDefinitions = [];
++    const flags = {};
++    for (const rawLine of text.split(/\r?\n/)) {
++        const line = rawLine.trim();
++        if (!line || line.startsWith(';') || line.startsWith('#')) continue;
++        if (line.length > 16384) throw new InvalidPayloadError('Remote configuration line is too long');
++        if (/^\[.*\]$/.test(line)) {
++            if (line.toLowerCase() !== '[custom]') throw new InvalidPayloadError('Only [custom] Subconverter profiles are supported');
++            inCustom = true; continue;
++        }
++        if (!inCustom) throw new InvalidPayloadError('INI configuration requires a [custom] section');
++        const equals = line.indexOf('=');
++        if (equals < 1) throw new InvalidPayloadError('Invalid INI directive');
++        const key = line.slice(0, equals).trim(), value = line.slice(equals + 1).trim();
++        if (key === 'custom_proxy_group') declarations.push(value);
++        else if (key === 'ruleset') ruleDefinitions.push(value);
++        else if (['enable_rule_generator', 'overwrite_original_rules'].includes(key)) {
++            if (!['true','false'].includes(value)) throw new InvalidPayloadError(`Invalid ${key} flag`);
++            flags[key] = value === 'true';
++        } else throw new InvalidPayloadError(`Unsupported remote INI directive: ${key}`);
++    }
++    if (declarations.length > 512 || ruleDefinitions.length > 2048) throw new InvalidPayloadError('Remote profile has too many groups or rulesets');
++    const providerNames = builder.getAllProviderNames();
++    const inlineNames = (builder.config.proxies || []).map(p => p.name).filter(name => typeof name === 'string');
++    const groups = declarations.map(value => {
++        const parts = value.split('`');
++        const name = parts.shift(), type = parts.shift();
++        if (!name || !GROUP_TYPES.has(type)) throw new InvalidPayloadError('Unsupported remote proxy group type');
++        const group = { name, type, proxies: [] };
++        if (type !== 'select') {
++            if (parts.length < 3) throw new InvalidPayloadError(`Missing health check for group ${name}`);
++            const timing = parts.pop().split(',');
++            group.interval = Number(timing[0]);
++            if (!Number.isFinite(group.interval) || group.interval < 1 || group.interval > 86400) throw new InvalidPayloadError('Invalid remote group interval');
++            if (timing[2]) { group.tolerance = Number(timing[2]); if (!Number.isFinite(group.tolerance) || group.tolerance < 0) throw new InvalidPayloadError('Invalid tolerance'); }
++            group.url = parts.pop();
++            let healthUrl;
++            try { healthUrl = new URL(group.url); } catch (_) { throw new InvalidPayloadError('Invalid group health-check URL'); }
++            if (!['http:','https:'].includes(healthUrl.protocol)) throw new InvalidPayloadError('Invalid group health-check scheme');
++            group.lazy = true;
++        }
++        const patterns = [];
++        for (const entry of parts) {
++            if (entry.startsWith('[]')) group.proxies.push(entry.slice(2));
++            else if (entry) patterns.push(compileRemotePattern(entry));
++        }
++        if (patterns.length > 1 && patterns.some(p => p.exclude)) throw new InvalidPayloadError('Combine negative exclusion into a single remote group expression');
++        group.proxies.push(...inlineNames.filter(node => patterns.some(pattern => pattern.test(node))));
++        group.proxies = [...new Set(group.proxies)];
++        if (patterns.length && providerNames.length) {
++            group.use = providerNames;
++            group.filter = patterns.map(p => `(?:${p.include})`).join('|');
++            const excluded = patterns.map(p => p.exclude).filter(Boolean);
++            if (excluded.length) group['exclude-filter'] = excluded.map(p => `(?:${p})`).join('|');
++        }
++        return group;
++    });
++    const rules = [], providers = {};
++    for (const definition of ruleDefinitions) {
++        const comma = definition.indexOf(',');
++        if (comma < 1) throw new InvalidPayloadError('Invalid remote ruleset declaration');
++        const target = definition.slice(0,comma).trim(), source = definition.slice(comma+1).trim();
++        if (source.startsWith('[]')) {
++            const rule = source.slice(2), fields = rule.split(',');
++            if (fields[0] === 'FINAL' || fields[0] === 'MATCH') rules.push(`MATCH,${target}`);
++            else {
++                if (!/^(DOMAIN|DOMAIN-SUFFIX|DOMAIN-KEYWORD|DOMAIN-REGEX|GEOSITE|GEOIP|IP-CIDR|IP-CIDR6|SRC-IP-CIDR|DST-PORT|SRC-PORT|NETWORK|PROCESS-NAME|PROCESS-PATH)$/.test(fields[0]) || fields.length < 2) throw new InvalidPayloadError('Unsupported inline remote rule');
++                rules.push(`${fields[0]},${fields[1]},${target}${fields.slice(2).length ? ','+fields.slice(2).join(',') : ''}`);
++            }
++        } else {
++            const url = publicHttpsUrl(source).toString(), id = `remote_rules_${Object.keys(providers).length+1}`;
++            providers[id] = { type:'http', behavior:'classical', format:'text', url, path:`./ruleset/${createStableProviderName(url)}.list`, interval:86400 };
++            rules.push(`RULE-SET,${id},${target}`);
++        }
++    }
++    if (flags.enable_rule_generator === false) throw new InvalidPayloadError('Remote INI profile must enable rule generation');
++    return { groups, rules, providers, overwrite: flags.overwrite_original_rules !== false };
++}
++
++function validateRouting(config, builder) {
++    const groups = config['proxy-groups'];
++    if (!Array.isArray(groups) || groups.length > 512) throw new InvalidPayloadError('Invalid remote proxy groups');
++    const names = groups.map(g => g?.name);
++    if (names.some(name => typeof name !== 'string' || !name.trim()) || new Set(names).size !== names.length) throw new InvalidPayloadError('Remote group names must be unique non-empty strings');
++    const valid = new Set([...SPECIAL_NAMES,...names,...(config.proxies || []).map(p=>p.name),...builder.getProviderNodeNames()]);
++    const providers = new Set(builder.getAllProviderNames());
++    for (const group of groups) {
++        if (!GROUP_TYPES.has(group.type)) throw new InvalidPayloadError('Unsupported remote group type');
++        if (group.proxies && (!Array.isArray(group.proxies) || group.proxies.some(name=>typeof name!=='string' || !valid.has(name)))) throw new InvalidPayloadError(`Invalid member in remote group ${group.name}`);
++        if (group.use && (!Array.isArray(group.use) || group.use.some(name=>!providers.has(name)))) throw new InvalidPayloadError(`Invalid provider in remote group ${group.name}`);
++        if (!builder.config['proxy-groups']?.includes(group)) {
++            if (group.filter) compileNodePattern(group.filter);
++            if (group['exclude-filter']) compileNodePattern(group['exclude-filter']);
++        }
++        if (!(group.proxies?.length || group.use?.length || group['include-all'] || group['include-all-providers'] || group['include-all-proxies'])) throw new InvalidPayloadError(`Remote group ${group.name} has no members`);
++    }
++    const visited = new Set(), active = new Set(), byName = new Map(groups.map(g=>[g.name,g]));
++    const visit = name => {
++        if (active.has(name)) throw new InvalidPayloadError('Remote profile has a proxy-group cycle');
++        if (visited.has(name)) return;
++        active.add(name);
++        for (const member of byName.get(name)?.proxies || []) if (byName.has(member)) visit(member);
++        active.delete(name); visited.add(name);
++    };
++    names.forEach(visit);
++    if (!Array.isArray(config.rules) || !config.rules.length || config.rules.length > 10000) throw new InvalidPayloadError('Remote profile requires routing rules');
++    for (const rule of config.rules) {
++        if (typeof rule !== 'string') throw new InvalidPayloadError('Invalid remote rule');
++        const fields = rule.split(',');
++        const target = fields[fields.length-1] === 'no-resolve' ? fields[fields.length-2] : fields[fields.length-1];
++        if (!new Set([...SPECIAL_NAMES,...names]).has(target)) throw new InvalidPayloadError(`Remote rule refers to an unknown policy`);
++        if (fields[0] === 'RULE-SET' && !config['rule-providers']?.[fields[1]]) throw new InvalidPayloadError('Remote rule refers to an unknown ruleset');
++    }
++}
++
++export function applyRemoteRouting(builder, text) {
++    if (typeof text !== 'string' || new TextEncoder().encode(text).length > MAX_BYTES) throw new InvalidPayloadError('Invalid remote configuration size');
++    const content = text.replace(/^\uFEFF/,'').trim();
++    let candidate = { ...builder.config };
++    if (/^\s*\[custom\]/im.test(content)) {
++        const parsed = parseIni(content,builder);
++        candidate['proxy-groups'] = parsed.groups;
++        candidate['rule-providers'] = parsed.overwrite ? parsed.providers : {...candidate['rule-providers'],...parsed.providers};
++        candidate.rules = parsed.overwrite ? parsed.rules : [...parsed.rules.filter(r=>!r.startsWith('MATCH,')),...candidate.rules];
++    } else {
++        let parsed;
++        try { parsed = yaml.load(content); } catch (_) { throw new InvalidPayloadError('Remote configuration is not valid INI or Clash YAML'); }
++        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new InvalidPayloadError('Remote Clash configuration must be an object');
++        // Import routing only; nodes and connection/control settings remain locally owned.
++        if (parsed['proxy-groups']) candidate['proxy-groups'] = parsed['proxy-groups'];
++        if (parsed.rules) candidate.rules = parsed.rules;
++        if (parsed['rule-providers']) candidate['rule-providers'] = parsed['rule-providers'];
++        if (!parsed.rules && !parsed['proxy-groups']) throw new InvalidPayloadError('Remote Clash configuration has no routing rules or groups');
++        for (const provider of Object.values(candidate['rule-providers'] || {})) if (provider.url) publicHttpsUrl(provider.url);
++    }
++    validateRouting(candidate,builder);
++    builder.config = candidate;
++    return yaml.dump(candidate);
++}
+diff --git a/test/formLogic.test.js b/test/formLogic.test.js
+index 906549c..0c65d20 100644
+--- a/test/formLogic.test.js
++++ b/test/formLogic.test.js
+@@ -32,4 +32,17 @@ describe('formLogic toString fix', () => {
+     expect(typeof data.toggleAccordion).toBe('function');
+     expect(data.showAdvanced).toBe(false);
+   });
++
++  it('generates encoded exclusion and remote profile parameters only for Clash', async () => {
++    const fakeWindow={APP_TRANSLATIONS:{},PREDEFINED_RULE_SETS:{},location:{origin:'https://example.com',search:''}};
++    const fakeDocument={querySelector:()=>({value:'[]'})};
++    const run=new Function('window','document','setTimeout','('+formLogicFn.toString()+')(); return window.formData();');
++    const data=run(fakeWindow,fakeDocument,()=>{});
++    data.input='test-source'; data.excludeNodes='剩余|套餐'; data.remoteConfigUrl='https://example.com/profile.ini?version=1&mode=full';
++    await data.submitForm();
++    expect(new URL(data.generatedLinks.clash).searchParams.get('exclude')).toBe('剩余|套餐');
++    expect(new URL(data.generatedLinks.clash).searchParams.get('remote_config')).toBe(data.remoteConfigUrl);
++    expect(new URL(data.generatedLinks.singbox).searchParams.has('remote_config')).toBe(false);
++    expect(new URL(data.generatedLinks.surge).searchParams.has('exclude')).toBe(false);
++  });
+ });
 diff --git a/test/proxy-providers.test.js b/test/proxy-providers.test.js
-index afefb52..50e532a 100644
+index afefb52..ea64c24 100644
 --- a/test/proxy-providers.test.js
 +++ b/test/proxy-providers.test.js
-@@ -47,6 +47,44 @@ describe('Auto Proxy Providers Detection', () => {
+@@ -47,6 +47,67 @@ describe('Auto Proxy Providers Detection', () => {
      });
  
      describe('Clash Builder', () => {
@@ -129,6 +712,29 @@ index afefb52..50e532a 100644
 +            expect(config['proxy-groups'].find(g => g.name === '🚀 节点选择').proxies).toContain(hk.name);
 +        });
 +
++        it('offers countries instead of provider nodes in service selectors', async () => {
++            fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml, format: 'clash', url: 'https://example.com/clash-sub' });
++            const builder = new ClashConfigBuilder('https://example.com/clash-sub', ['Youtube'], [], null, 'zh-CN', 'test-agent', true);
++            const config = yaml.load(await builder.build());
++            for (const name of ['📹 油管视频', '🐟 漏网之鱼']) {
++                const group = config['proxy-groups'].find(g => g.name === name);
++                expect(group.proxies).toContain('🇭🇰 Hong Kong');
++                expect(group.proxies).toContain('🇯🇵 Japan');
++                expect(group.use).toBeUndefined();
++                expect(group.proxies).not.toContain('HK-Node');
++            }
++        });
++
++        it('excludes provider metadata and client provider nodes before country grouping', async () => {
++            fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml.replace('HK-Node', 'HK-剩余流量'), format: 'clash', url: 'https://example.com/clash-sub' });
++            const builder = new ClashConfigBuilder('https://example.com/clash-sub', [], [], null, 'zh-CN', 'test-agent', true);
++            builder.setNodeExclusion('剩余|套餐');
++            const config = yaml.load(await builder.build());
++            expect(config['proxy-groups'].some(g => g.name === '🇭🇰 Hong Kong')).toBe(false);
++            expect(config['proxy-groups'].some(g => g.name === '🇯🇵 Japan')).toBe(true);
++            expect(Object.values(config['proxy-providers'])[0]['exclude-filter']).toBe('剩余|套餐');
++        });
++
 +        it('escapes provider names and keeps mixed inline/provider countries separate', async () => {
 +            fetchSubscriptionWithFormat.mockResolvedValue({
 +                content: mockClashYaml.replace('HK-Node', 'HK-[Node].+ (1)'),
@@ -150,3 +756,100 @@ index afefb52..50e532a 100644
          it('should use Clash URL as proxy-provider when format is Clash YAML', async () => {
              // Mock fetchSubscriptionWithFormat to return Clash format
              fetchSubscriptionWithFormat.mockResolvedValue({
+diff --git a/test/remote-config.test.js b/test/remote-config.test.js
+new file mode 100644
+index 0000000..e1d751b
+--- /dev/null
++++ b/test/remote-config.test.js
+@@ -0,0 +1,91 @@
++import { describe, it, expect, vi, afterEach } from 'vitest';
++import { compileNodePattern } from '../src/services/nodeFilter.js';
++import { applyRemoteRouting, loadRemoteRouting } from '../src/services/remoteConfigService.js';
++import { createApp } from '../src/app/createApp.jsx';
++
++const fixture = () => ({
++    config: { proxies: [{name:'HK-A'}, {name:'JP-TYO-B'}, {name:'US-C'}], 'proxy-groups': [], rules: ['MATCH,DIRECT'] },
++    getAllProviderNames: () => ['provider1'],
++    getProviderNodeNames: () => ['HK-Remote','JP-TYO-Remote'],
++    nodeExclusion: null
++});
++describe('remote routing and node filters', () => {
++    afterEach(() => vi.unstubAllGlobals());
++    it('matches exclusion keywords without regex backtracking', () => {
++        expect(compileNodePattern('剩余|套餐').test('剩余流量')).toBe(true);
++        expect(compileNodePattern('剩余|套餐').test('HK-A')).toBe(false);
++        expect(() => compileNodePattern('[')).toThrow();
++        expect(() => compileNodePattern('a'.repeat(513))).toThrow();
++    });
++    it('imports INI references, filters, inline rules and classical rule providers', () => {
++        const builder=fixture();
++        applyRemoteRouting(builder, `[custom]\ncustom_proxy_group=HK\`url-test\`HK\`https://example.com/check\`300,,50\ncustom_proxy_group=YouTube\`select\`[]HK\`[]DIRECT\nruleset=YouTube,https://example.com/youtube.list\nruleset=DIRECT,[]GEOIP,CN\nruleset=YouTube,[]FINAL\nenable_rule_generator=true\noverwrite_original_rules=true`);
++        const groups=builder.config['proxy-groups'];
++        expect(groups.find(g=>g.name==='YouTube').proxies).toEqual(['HK','DIRECT']);
++        expect(groups.find(g=>g.name==='YouTube').use).toBeUndefined();
++        expect(groups.find(g=>g.name==='HK').filter).toBe('(?:HK)');
++        expect(groups.find(g=>g.name==='HK').proxies).toEqual(['HK-A']);
++        expect(builder.config.rules).toEqual(['RULE-SET,remote_rules_1,YouTube','GEOIP,CN,DIRECT','MATCH,YouTube']);
++        expect(builder.config['rule-providers'].remote_rules_1.format).toBe('text');
++    });
++    it('supports the screenshot INI negative exclusion filter safely', () => {
++        const builder=fixture();
++        applyRemoteRouting(builder, '[custom]\ncustom_proxy_group=Auto`url-test`^(?!.*(US-LAX|JP-TYO)).*$`https://example.com/check`300,,50\nruleset=Auto,[]FINAL');
++        const group=builder.config['proxy-groups'][0];
++        expect(group.proxies).toEqual(['HK-A','US-C']);
++        expect(group.filter).toBe('(?:.*)');
++        expect(group['exclude-filter']).toBe('(?:US-LAX|JP-TYO)');
++    });
++    it('imports YAML routing while preserving source nodes and providers', () => {
++        const builder=fixture(); builder.config['proxy-providers']={provider1:{url:'https://example.com/sub'}};
++        applyRemoteRouting(builder, 'proxies: []\nproxy-groups:\n  - name: Remote\n    type: select\n    proxies: [DIRECT]\nrules:\n  - MATCH,Remote\nexternal-controller: 0.0.0.0:9090');
++        expect(builder.config.proxies).toHaveLength(3);
++        expect(builder.config['proxy-providers'].provider1).toBeDefined();
++        expect(builder.config.rules).toEqual(['MATCH,Remote']);
++        expect(builder.config['external-controller']).toBeUndefined();
++    });
++    it('rejects invalid group references and unsupported INI directives', () => {
++        expect(()=>applyRemoteRouting(fixture(),'[custom]\ncustom_proxy_group=A`select`[]Missing\nruleset=A,[]FINAL')).toThrow();
++        expect(()=>applyRemoteRouting(fixture(),'[custom]\nscript=execute')).toThrow();
++    });
++    it('rejects private config URLs and redirects before fetching', async () => {
++        const fetchMock=vi.fn(); vi.stubGlobal('fetch',fetchMock);
++        await expect(loadRemoteRouting('https://127.0.0.1/config.ini')).rejects.toThrow();
++        expect(fetchMock).not.toHaveBeenCalled();
++        fetchMock.mockResolvedValue(new Response(null,{status:302,headers:{Location:'https://192.168.0.1/config.ini'}}));
++        await expect(loadRemoteRouting('https://example.com/config.ini')).rejects.toThrow();
++        expect(fetchMock).toHaveBeenCalledTimes(1);
++    });
++    it('applies exclusions through the actual Clash conversion endpoint', async () => {
++        const app=createApp({logger:{error:()=>{}}});
++        const source='vless://00000000-0000-4000-8000-000000000001@us.example.com:443?type=tcp#US-剩余流量\nvless://00000000-0000-4000-8000-000000000002@jp.example.com:443?type=tcp#JP-Node';
++        const response=await app.request('/clash?config='+encodeURIComponent(source)+'&group_by_country=true&exclude='+encodeURIComponent('剩余'));
++        expect(response.status).toBe(200);
++        const config=(await import('js-yaml')).default.load(await response.text());
++        expect(config.proxies.map(p=>p.name)).toEqual(['JP-Node']);
++        expect(config['proxy-groups'].some(g=>g.name==='🇺🇸 United States')).toBe(false);
++    });
++    it('loads a remote profile through the actual Clash endpoint', async () => {
++        vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response('[custom]\ncustom_proxy_group=Remote`select`[]DIRECT\nruleset=Remote,[]FINAL')));
++        const app=createApp({logger:{error:()=>{}}});
++        const source='vless://00000000-0000-4000-8000-000000000001@example.com:443?type=tcp#HK-A';
++        const response=await app.request('/clash?config='+encodeURIComponent(source)+'&remote_config='+encodeURIComponent('https://example.com/profile.ini'));
++        expect(response.status).toBe(200);
++        const config=(await import('js-yaml')).default.load(await response.text());
++        expect(config.rules).toEqual(['MATCH,Remote']);
++        expect(config['proxy-groups'].map(g=>g.name)).toEqual(['Remote']);
++        expect(config.proxies).toHaveLength(1);
++    });
++    it('rejects malformed exclusion syntax with a 400 response', async () => {
++        const app=createApp({logger:{error:()=>{}}});
++        const response=await app.request('/clash?config=invalid&exclude=%5B');
++        expect(response.status).toBe(400);
++    });
++    it('preserves the existing repository Xray subscription metadata behavior', async () => {
++        vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response('vless://example', {headers:{'subscription-userinfo':'upload=1; download=2; total=3'}})));
++        const app=createApp({logger:{warn:()=>{}}});
++        const response=await app.request('/xray?config='+encodeURIComponent('https://example.com/sub'));
++        expect(response.status).toBe(200);
++        expect(response.headers.get('subscription-userinfo')).toBe('upload=1; download=2; total=3');
++    });
++});

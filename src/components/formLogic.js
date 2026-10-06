@@ -99,6 +99,8 @@ export const formLogicFn = (t) => {
             configValidationState: '',
             configValidationMessage: '',
             customUA: '',
+            excludeNodes: '',
+            remoteConfigUrl: '',
             loading: false,
             generatedLinks: null,
             shortenedLinks: null,
@@ -136,6 +138,8 @@ export const formLogicFn = (t) => {
                 this.externalController = localStorage.getItem('externalController') || '';
                 this.externalUiDownloadUrl = localStorage.getItem('externalUiDownloadUrl') || '';
                 this.customUA = localStorage.getItem('userAgent') || '';
+                this.excludeNodes = localStorage.getItem('clashExcludeNodes') ?? '超时|官网|异常|重置|剩余|套餐|收藏|邮箱';
+                this.remoteConfigUrl = localStorage.getItem('clashRemoteConfigUrl') || '';
                 this.configEditor = localStorage.getItem('configEditor') || '';
                 this.configType = localStorage.getItem('configType') || 'singbox';
                 this.customShortCode = localStorage.getItem('customShortCode') || '';
@@ -162,6 +166,8 @@ export const formLogicFn = (t) => {
                 });
                 this.$watch('showAdvanced', val => localStorage.setItem('advancedToggle', val));
                 this.$watch('groupByCountry', val => localStorage.setItem('groupByCountry', val));
+                this.$watch('excludeNodes', val => localStorage.setItem('clashExcludeNodes', val));
+                this.$watch('remoteConfigUrl', val => localStorage.setItem('clashRemoteConfigUrl', val));
                 this.$watch('includeAutoSelect', val => localStorage.setItem('includeAutoSelect', val));
                 this.$watch('enableClashUI', val => localStorage.setItem('enableClashUI', val));
                 this.$watch('externalController', val => localStorage.setItem('externalController', val));
@@ -347,6 +353,8 @@ export const formLogicFn = (t) => {
                     this.generatedLinks = null;
                     this.shortenedLinks = null;
                     this.customShortCode = '';
+                    this.excludeNodes = '';
+                    this.remoteConfigUrl = '';
                     // Also clear from localStorage
                     localStorage.removeItem('customShortCode');
                 }
@@ -392,11 +400,14 @@ export const formLogicFn = (t) => {
                     }
 
                     const queryString = params.toString();
+                    const clashParams = new URLSearchParams(params);
+                    if (this.excludeNodes.trim()) clashParams.set('exclude', this.excludeNodes.trim());
+                    if (this.remoteConfigUrl.trim()) clashParams.set('remote_config', this.remoteConfigUrl.trim());
 
                     this.generatedLinks = {
                         xray: origin + '/xray?' + queryString,
                         singbox: origin + '/singbox?' + queryString,
-                        clash: origin + '/clash?' + queryString,
+                        clash: origin + '/clash?' + clashParams.toString(),
                         surge: origin + '/surge?' + queryString
                     };
 
@@ -635,6 +646,8 @@ export const formLogicFn = (t) => {
                 }
 
                 const ua = params.get('ua');
+                this.excludeNodes = params.get('exclude') || '';
+                this.remoteConfigUrl = params.get('remote_config') || '';
                 if (ua) {
                     this.customUA = ua;
                 }
@@ -647,7 +660,7 @@ export const formLogicFn = (t) => {
 
                 // Expand advanced options if any advanced settings are present
                 if (selectedRules || customRules || this.groupByCountry || this.enableClashUI ||
-                    externalController || externalUiDownloadUrl || ua || configId) {
+                    externalController || externalUiDownloadUrl || ua || configId || this.excludeNodes || this.remoteConfigUrl) {
                     this.showAdvanced = true;
                 }
             }

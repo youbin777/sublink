@@ -32,4 +32,17 @@ describe('formLogic toString fix', () => {
     expect(typeof data.toggleAccordion).toBe('function');
     expect(data.showAdvanced).toBe(false);
   });
+
+  it('generates encoded exclusion and remote profile parameters only for Clash', async () => {
+    const fakeWindow={APP_TRANSLATIONS:{},PREDEFINED_RULE_SETS:{},location:{origin:'https://example.com',search:''}};
+    const fakeDocument={querySelector:()=>({value:'[]'})};
+    const run=new Function('window','document','setTimeout','('+formLogicFn.toString()+')(); return window.formData();');
+    const data=run(fakeWindow,fakeDocument,()=>{});
+    data.input='test-source'; data.excludeNodes='剩余|套餐'; data.remoteConfigUrl='https://example.com/profile.ini?version=1&mode=full';
+    await data.submitForm();
+    expect(new URL(data.generatedLinks.clash).searchParams.get('exclude')).toBe('剩余|套餐');
+    expect(new URL(data.generatedLinks.clash).searchParams.get('remote_config')).toBe(data.remoteConfigUrl);
+    expect(new URL(data.generatedLinks.singbox).searchParams.has('remote_config')).toBe(false);
+    expect(new URL(data.generatedLinks.surge).searchParams.has('exclude')).toBe(false);
+  });
 });

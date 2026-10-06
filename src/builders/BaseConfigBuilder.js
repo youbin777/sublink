@@ -22,6 +22,7 @@ export class BaseConfigBuilder {
     async build() {
         const customItems = await this.parseCustomItems();
         this.addCustomItems(customItems);
+        this.filterNodes();
         this.addSelectors();
         return this.formatConfig();
     }
@@ -189,6 +190,10 @@ export class BaseConfigBuilder {
 
     registerProviderContent(content) {
         // Provider metadata is optional and remains specific to the target client.
+    }
+
+    filterNodes() {
+        // Each client controls how its inline nodes and remote providers are filtered.
     }
 
     getAutoProviderDescriptors(reservedNames = []) {

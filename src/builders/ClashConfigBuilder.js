@@ -7,6 +7,7 @@ import { buildSelectorMembers, buildNodeSelectMembers, buildCustomRuleMembers, u
 import { emitClashRules, sanitizeClashProxyGroups } from './helpers/clashConfigUtils.js';
 import { normalizeGroupName, findGroupIndexByName } from './helpers/groupNameUtils.js';
 import { InvalidConfigError } from '../services/errors.js';
+import { compileNodePattern } from '../services/nodeFilter.js';
 
 /**
  * Check if the client supports MRS (Meta Rule Set) format
@@ -57,6 +58,8 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
         this.customRules = customRules;
         this.countryGroupNames = [];
         this.providerCountryGroups = {};
+        this.providerNodeNames = [];
+        this.nodeExclusion = null;
         this.manualGroupName = null;
         this.enableClashUI = enableClashUI;
         this.externalController = externalController;
@@ -73,13 +76,15 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
     }
 
     registerProviderContent(content) {
-        if (!this.groupByCountry) return;
         // Keep provider refresh intact; only names are needed to classify its nodes.
         try {
             const config = yaml.load(content);
             if (!Array.isArray(config?.proxies)) return;
             config.proxies.forEach(proxy => {
                 if (typeof proxy?.name !== 'string' || !proxy.name.trim()) return;
+                if (this.nodeExclusion?.test(proxy.name)) return;
+                if (!this.providerNodeNames.includes(proxy.name)) this.providerNodeNames.push(proxy.name);
+                if (!this.groupByCountry) return;
                 const country = parseCountryFromNodeName(proxy.name);
                 if (!country) return;
                 const group = this.providerCountryGroups[country.name] ||= { ...country, proxies: [] };
@@ -87,6 +92,20 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
             });
         } catch (_) {
             // Invalid optional metadata must not disable a working provider.
+        }
+    }
+
+    setNodeExclusion(pattern) {
+        this.nodeExclusion = compileNodePattern(pattern);
+    }
+
+    getProviderNodeNames() {
+        return this.providerNodeNames;
+    }
+
+    filterNodes() {
+        if (this.nodeExclusion && Array.isArray(this.config.proxies)) {
+            this.config.proxies = this.config.proxies.filter(proxy => !this.nodeExclusion.test(proxy?.name));
         }
     }
 
@@ -103,6 +122,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                 url: url,
                 path: `./proxy_providers/${name}.yaml`,
                 interval: 3600,
+                ...(this.nodeExclusion ? { 'exclude-filter': this.nodeExclusion.source } : {}),
                 'health-check': {
                     enable: true,
                     url: 'https://www.gstatic.com/generate_204',
@@ -431,7 +451,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                     };
                     // Add 'use' field if we have proxy-providers
                     const providerNames = this.getAllProviderNames();
-                    if (providerNames.length > 0) {
+                    if (providerNames.length > 0 && !this.groupByCountry) {
                         group.use = providerNames;
                     }
                     this.config['proxy-groups'].push(group);
@@ -478,7 +498,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
         };
         // Add 'use' field if we have proxy-providers
         const providerNames = this.getAllProviderNames();
-        if (providerNames.length > 0) {
+        if (providerNames.length > 0 && !this.groupByCountry) {
             group.use = providerNames;
         }
         this.config['proxy-groups'].push(group);

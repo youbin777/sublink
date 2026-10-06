@@ -123,6 +123,23 @@ export const Form = (props) => {
   {/* Advanced Options Content */ }
   <div x-show="showAdvanced" {...{'x-transition:enter': 'transition ease-out duration-300', 'x-transition:enter-start': 'opacity-0 transform -translate-y-4', 'x-transition:enter-end': 'opacity-100 transform translate-y-0', 'x-transition:leave': 'transition ease-in duration-200', 'x-transition:leave-start': 'opacity-100 transform translate-y-0', 'x-transition:leave-end': 'opacity-0 transform -translate-y-4'}} class="space-y-6">
 
+    <section class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-5">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{t('clashSubscriptionOptions')}</h3>
+      <div>
+        <label for="excludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('excludeNodes')}</label>
+        <input id="excludeNodes" name="exclude" type="text" x-model="excludeNodes" maxlength="512" placeholder="超时|官网|异常|重置|剩余|套餐|收藏|邮箱" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('excludeNodesHelp')}</p>
+      </div>
+      <div>
+        <label for="remoteConfigUrl" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('remoteRoutingConfig')}</label>
+        <input id="remoteConfigUrl" name="remote_config" type="url" x-model="remoteConfigUrl" list="remote-routing-presets" placeholder="https://example.com/config.ini" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
+        <datalist id="remote-routing-presets">
+          <option value="https://raw.githubusercontent.com/youbin777/clash/refs/heads/main/ACL4SSR_Online_Full_MultiMode.ini">ACL4SSR MultiMode</option>
+        </datalist>
+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('remoteRoutingHelp')}</p>
+      </div>
+    </section>
+
     {/* Rule Selection */ }
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
       <div class="flex items-center justify-between mb-4">

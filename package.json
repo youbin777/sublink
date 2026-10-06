@@ -23,7 +23,8 @@
     "esbuild-register": "^3.6.0",
     "hono": "^4.10.7",
     "ioredis": "^5.8.2",
-    "js-yaml": "^4.1.1"
+    "js-yaml": "^4.1.1",
+    "re2js": "2.8.6"
   },
   "engines": {
     "node": ">=18"

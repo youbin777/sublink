@@ -67,6 +67,29 @@ describe('Auto Proxy Providers Detection', () => {
             expect(config['proxy-groups'].find(g => g.name === '🚀 节点选择').proxies).toContain(hk.name);
         });
 
+        it('offers countries instead of provider nodes in service selectors', async () => {
+            fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml, format: 'clash', url: 'https://example.com/clash-sub' });
+            const builder = new ClashConfigBuilder('https://example.com/clash-sub', ['Youtube'], [], null, 'zh-CN', 'test-agent', true);
+            const config = yaml.load(await builder.build());
+            for (const name of ['📹 油管视频', '🐟 漏网之鱼']) {
+                const group = config['proxy-groups'].find(g => g.name === name);
+                expect(group.proxies).toContain('🇭🇰 Hong Kong');
+                expect(group.proxies).toContain('🇯🇵 Japan');
+                expect(group.use).toBeUndefined();
+                expect(group.proxies).not.toContain('HK-Node');
+            }
+        });
+
+        it('excludes provider metadata and client provider nodes before country grouping', async () => {
+            fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml.replace('HK-Node', 'HK-剩余流量'), format: 'clash', url: 'https://example.com/clash-sub' });
+            const builder = new ClashConfigBuilder('https://example.com/clash-sub', [], [], null, 'zh-CN', 'test-agent', true);
+            builder.setNodeExclusion('剩余|套餐');
+            const config = yaml.load(await builder.build());
+            expect(config['proxy-groups'].some(g => g.name === '🇭🇰 Hong Kong')).toBe(false);
+            expect(config['proxy-groups'].some(g => g.name === '🇯🇵 Japan')).toBe(true);
+            expect(Object.values(config['proxy-providers'])[0]['exclude-filter']).toBe('剩余|套餐');
+        });
+
         it('escapes provider names and keeps mixed inline/provider countries separate', async () => {
             fetchSubscriptionWithFormat.mockResolvedValue({
                 content: mockClashYaml.replace('HK-Node', 'HK-[Node].+ (1)'),

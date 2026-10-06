@@ -16,6 +16,7 @@ import { ShortLinkService } from '../services/shortLinkService.js';
 import { ConfigStorageService } from '../services/configStorageService.js';
 import { ServiceError, MissingDependencyError } from '../services/errors.js';
 import { normalizeRuntime } from '../runtime/runtimeConfig.js';
+import { loadRemoteRouting, applyRemoteRouting } from '../services/remoteConfigService.js';
 import { PREDEFINED_RULE_SETS, SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11, generateSubconverterConfig } from '../config/index.js';
 
 const DEFAULT_USER_AGENT = 'curl/7.74.0';
@@ -141,6 +142,8 @@ export function createApp(bindings = {}) {
             const externalUiDownloadUrl = c.req.query('external_ui_download_url');
             const configId = c.req.query('configId');
             const lang = c.get('lang');
+            const excludeNodes = c.req.query('exclude') || '';
+            const remoteConfigUrl = c.req.query('remote_config') || '';
 
             let baseConfig;
             if (configId) {
@@ -161,13 +164,16 @@ export function createApp(bindings = {}) {
                 externalUiDownloadUrl,
                 includeAutoSelect
             );
+            builder.setNodeExclusion(excludeNodes);
+            const remoteContent = remoteConfigUrl ? await loadRemoteRouting(remoteConfigUrl) : null;
             await builder.build();
             const userinfo = builder.getSubscriptionUserinfo();
             const headers = { 'Content-Type': 'text/yaml; charset=utf-8' };
             if (userinfo) {
                 headers['subscription-userinfo'] = userinfo;
             }
-            return c.text(builder.formatConfig(), 200, headers);
+            const output = builder.formatConfig();
+            return c.text(remoteContent !== null ? applyRemoteRouting(builder, remoteContent) : output, 200, headers);
         } catch (error) {
             return handleError(c, error, runtime.logger);
         }
@@ -306,7 +312,6 @@ export function createApp(bindings = {}) {
         if (subscriptionUserinfo) {
             responseHeaders['subscription-userinfo'] = subscriptionUserinfo;
         }
-
         return c.text(encodeBase64(finalString), 200, responseHeaders);
     });
 
