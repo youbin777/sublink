@@ -165,6 +165,8 @@ export function createApp(bindings = {}) {
                 includeAutoSelect
             );
             builder.setNodeExclusion(excludeNodes);
+            const autoExclude = c.req.query('auto_exclude');
+            if (autoExclude !== undefined) builder.setAutoSelectExclusion(autoExclude);
             const remoteContent = remoteConfigUrl ? await loadRemoteRouting(remoteConfigUrl) : null;
             await builder.build();
             const userinfo = builder.getSubscriptionUserinfo();

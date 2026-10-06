@@ -132,6 +132,11 @@ export const Form = (props) => {
         <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('excludeNodesHelp')}</p>
       </div>
       <div>
+        <label for="autoExcludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('autoExcludeNodes')}</label>
+        <input id="autoExcludeNodes" name="auto_exclude" type="text" x-model="autoExcludeNodes" maxlength="512" placeholder="US-LAX|JP-TYO|TW-TPE|KR-INC" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('autoExcludeNodesHelp')}</p>
+      </div>
+      <div>
         <label for="remoteConfigUrl" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('remoteRoutingConfig')}</label>
         <input id="remoteConfigUrl" name="remote_config" type="url" x-model="remoteConfigUrl" list="remote-routing-presets" placeholder="https://example.com/config.ini" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
         <datalist id="remote-routing-presets">

@@ -43,7 +43,7 @@ index 6345993..908a4bb 100644
    "engines": {
      "node": ">=18"
 diff --git a/src/app/createApp.jsx b/src/app/createApp.jsx
-index 8dbd9e9..560b275 100644
+index 8dbd9e9..21a0b81 100644
 --- a/src/app/createApp.jsx
 +++ b/src/app/createApp.jsx
 @@ -16,6 +16,7 @@ import { ShortLinkService } from '../services/shortLinkService.js';
@@ -63,11 +63,13 @@ index 8dbd9e9..560b275 100644
  
              let baseConfig;
              if (configId) {
-@@ -161,13 +164,17 @@ export function createApp(bindings = {}) {
+@@ -161,13 +164,19 @@ export function createApp(bindings = {}) {
                  externalUiDownloadUrl,
                  includeAutoSelect
              );
 +            builder.setNodeExclusion(excludeNodes);
++            const autoExclude = c.req.query('auto_exclude');
++            if (autoExclude !== undefined) builder.setAutoSelectExclusion(autoExclude);
 +            const remoteContent = remoteConfigUrl ? await loadRemoteRouting(remoteConfigUrl) : null;
              await builder.build();
              const userinfo = builder.getSubscriptionUserinfo();
@@ -82,7 +84,7 @@ index 8dbd9e9..560b275 100644
          } catch (error) {
              return handleError(c, error, runtime.logger);
          }
-@@ -268,6 +275,7 @@ export function createApp(bindings = {}) {
+@@ -268,6 +277,7 @@ export function createApp(bindings = {}) {
  
          const proxylist = inputString.split('\n');
          const finalProxyList = [];
@@ -90,7 +92,7 @@ index 8dbd9e9..560b275 100644
          const userAgent = c.req.query('ua') || getRequestHeader(c.req, 'User-Agent') || DEFAULT_USER_AGENT;
          const headers = { 'User-Agent': userAgent };
  
-@@ -278,6 +286,10 @@ export function createApp(bindings = {}) {
+@@ -278,6 +288,10 @@ export function createApp(bindings = {}) {
              if (trimmedProxy.startsWith('http://') || trimmedProxy.startsWith('https://')) {
                  try {
                      const response = await fetch(trimmedProxy, { method: 'GET', headers });
@@ -101,7 +103,7 @@ index 8dbd9e9..560b275 100644
                      const text = await response.text();
                      let processed = tryDecodeSubscriptionLines(text, { decodeUriComponent: true });
                      if (!Array.isArray(processed)) processed = [processed];
-@@ -297,7 +309,11 @@ export function createApp(bindings = {}) {
+@@ -297,7 +311,11 @@ export function createApp(bindings = {}) {
              return c.text('Missing config parameter', 400);
          }
  
@@ -150,7 +152,7 @@ index 0da4b82..220a0da 100644
          if (this.autoProviderDescriptors) {
              return this.autoProviderDescriptors;
 diff --git a/src/builders/ClashConfigBuilder.js b/src/builders/ClashConfigBuilder.js
-index fe03684..d34f34a 100644
+index fe03684..69c2d67 100644
 --- a/src/builders/ClashConfigBuilder.js
 +++ b/src/builders/ClashConfigBuilder.js
 @@ -1,12 +1,13 @@
@@ -168,17 +170,18 @@ index fe03684..d34f34a 100644
  
  /**
   * Check if the client supports MRS (Meta Rule Set) format
-@@ -56,6 +57,9 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -56,6 +57,10 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
          this.selectedRules = selectedRules;
          this.customRules = customRules;
          this.countryGroupNames = [];
 +        this.providerCountryGroups = {};
 +        this.providerNodeNames = [];
 +        this.nodeExclusion = null;
++        this.autoSelectExclusion = compileNodePattern('US-LAX|JP-TYO|TW-TPE|KR-INC');
          this.manualGroupName = null;
          this.enableClashUI = enableClashUI;
          this.externalController = externalController;
-@@ -71,6 +75,40 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -71,6 +76,44 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
          return format === 'clash';
      }
  
@@ -206,6 +209,10 @@ index fe03684..d34f34a 100644
 +        this.nodeExclusion = compileNodePattern(pattern);
 +    }
 +
++    setAutoSelectExclusion(pattern) {
++        this.autoSelectExclusion = compileNodePattern(pattern);
++    }
++
 +    getProviderNodeNames() {
 +        return this.providerNodeNames;
 +    }
@@ -219,7 +226,7 @@ index fe03684..d34f34a 100644
      /**
       * Generate proxy-providers configuration from collected URLs
       * @returns {object} - proxy-providers object
-@@ -84,6 +122,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -84,6 +127,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                  url: url,
                  path: `./proxy_providers/${name}.yaml`,
                  interval: 3600,
@@ -227,15 +234,15 @@ index fe03684..d34f34a 100644
                  'health-check': {
                      enable: true,
                      url: 'https://www.gstatic.com/generate_204',
-@@ -343,6 +382,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -343,6 +387,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
          const group = {
              name: autoName,
              type: 'url-test',
-+            'exclude-filter': 'US-LAX|JP-TYO|TW-TPE|KR-INC',
++            ...(this.autoSelectExclusion ? { 'exclude-filter': this.autoSelectExclusion.source } : {}),
              proxies: deepCopy(uniqueNames(proxyList)),
              url: 'https://www.gstatic.com/generate_204',
              interval: 300,
-@@ -377,7 +417,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -377,7 +422,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
  
          // Add 'use' field if we have proxy-providers
          const providerNames = this.getAllProviderNames();
@@ -244,7 +251,7 @@ index fe03684..d34f34a 100644
              group.use = providerNames;
          }
  
-@@ -412,7 +452,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -412,7 +457,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                      };
                      // Add 'use' field if we have proxy-providers
                      const providerNames = this.getAllProviderNames();
@@ -253,7 +260,7 @@ index fe03684..d34f34a 100644
                          group.use = providerNames;
                      }
                      this.config['proxy-groups'].push(group);
-@@ -459,7 +499,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -459,7 +504,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
          };
          // Add 'use' field if we have proxy-providers
          const providerNames = this.getAllProviderNames();
@@ -262,7 +269,7 @@ index fe03684..d34f34a 100644
              group.use = providerNames;
          }
          this.config['proxy-groups'].push(group);
-@@ -470,6 +510,9 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -470,6 +515,9 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
          const countryGroups = groupProxiesByCountry(proxies, {
              getName: proxy => this.getProxyName(proxy)
          });
@@ -272,7 +279,7 @@ index fe03684..d34f34a 100644
  
          const existingNames = new Set((this.config['proxy-groups'] || []).map(g => normalizeGroupName(g?.name)).filter(Boolean));
  
-@@ -483,7 +526,6 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -483,7 +531,6 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                      type: 'select',
                      proxies: manualProxyNames
                  };
@@ -280,7 +287,7 @@ index fe03684..d34f34a 100644
                  const providerNames = this.getAllProviderNames();
                  if (providerNames.length > 0) {
                      group.use = providerNames;
-@@ -509,10 +551,13 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -509,10 +556,13 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                      interval: 300,
                      lazy: false
                  };
@@ -297,7 +304,7 @@ index fe03684..d34f34a 100644
                  this.config['proxy-groups'].push(group);
                  existingNames.add(norm);
 diff --git a/src/components/Form.jsx b/src/components/Form.jsx
-index 31218b9..73b9b3a 100644
+index 31218b9..d74a5f1 100644
 --- a/src/components/Form.jsx
 +++ b/src/components/Form.jsx
 @@ -34,7 +34,8 @@ export const Form = (props) => {
@@ -310,7 +317,7 @@ index 31218b9..73b9b3a 100644
    };
  
    const scriptContent = `
-@@ -123,6 +124,23 @@ export const Form = (props) => {
+@@ -123,6 +124,28 @@ export const Form = (props) => {
    {/* Advanced Options Content */ }
    <div x-show="showAdvanced" {...{'x-transition:enter': 'transition ease-out duration-300', 'x-transition:enter-start': 'opacity-0 transform -translate-y-4', 'x-transition:enter-end': 'opacity-100 transform translate-y-0', 'x-transition:leave': 'transition ease-in duration-200', 'x-transition:leave-start': 'opacity-100 transform translate-y-0', 'x-transition:leave-end': 'opacity-0 transform -translate-y-4'}} class="space-y-6">
  
@@ -320,6 +327,11 @@ index 31218b9..73b9b3a 100644
 +        <label for="excludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('excludeNodes')}</label>
 +        <input id="excludeNodes" name="exclude" type="text" x-model="excludeNodes" maxlength="512" placeholder="超时|官网|异常|重置|剩余|套餐|收藏|邮箱" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
 +        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('excludeNodesHelp')}</p>
++      </div>
++      <div>
++        <label for="autoExcludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('autoExcludeNodes')}</label>
++        <input id="autoExcludeNodes" name="auto_exclude" type="text" x-model="autoExcludeNodes" maxlength="512" placeholder="US-LAX|JP-TYO|TW-TPE|KR-INC" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
++        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('autoExcludeNodesHelp')}</p>
 +      </div>
 +      <div>
 +        <label for="remoteConfigUrl" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('remoteRoutingConfig')}</label>
@@ -334,7 +346,7 @@ index 31218b9..73b9b3a 100644
      {/* Rule Selection */ }
      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
        <div class="flex items-center justify-between mb-4">
-@@ -342,7 +360,7 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
+@@ -342,7 +365,7 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
        </form>
  
    {/* Results Section */ }
@@ -343,7 +355,7 @@ index 31218b9..73b9b3a 100644
      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-8 transition-all duration-300 hover:shadow-md">
        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
          <h2 class="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-@@ -354,6 +372,11 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
+@@ -354,6 +377,11 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
        </div>
  
        <div class="mt-6 space-y-4">
@@ -355,7 +367,7 @@ index 31218b9..73b9b3a 100644
          {LINK_FIELDS.map((field) => (
            <div class="relative group" key={field.key}>
              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-@@ -361,24 +384,30 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
+@@ -361,24 +389,30 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
              </label>
              <div class="flex gap-2">
                <input
@@ -393,14 +405,15 @@ index 31218b9..73b9b3a 100644
              </div>
            </div>
 diff --git a/src/components/formLogic.js b/src/components/formLogic.js
-index 57f401f..e71025f 100644
+index 57f401f..899a7b8 100644
 --- a/src/components/formLogic.js
 +++ b/src/components/formLogic.js
-@@ -99,8 +99,16 @@ export const formLogicFn = (t) => {
+@@ -99,8 +99,17 @@ export const formLogicFn = (t) => {
              configValidationState: '',
              configValidationMessage: '',
              customUA: '',
 +            excludeNodes: '',
++            autoExcludeNodes: 'US-LAX|JP-TYO|TW-TPE|KR-INC',
 +            remoteConfigUrl: '',
              loading: false,
              generatedLinks: null,
@@ -413,25 +426,27 @@ index 57f401f..e71025f 100644
              shortenedLinks: null,
              shortening: false,
              customShortCode: '',
-@@ -136,6 +144,8 @@ export const formLogicFn = (t) => {
+@@ -136,6 +145,9 @@ export const formLogicFn = (t) => {
                  this.externalController = localStorage.getItem('externalController') || '';
                  this.externalUiDownloadUrl = localStorage.getItem('externalUiDownloadUrl') || '';
                  this.customUA = localStorage.getItem('userAgent') || '';
 +                this.excludeNodes = localStorage.getItem('clashExcludeNodes') ?? '超时|官网|异常|重置|剩余|套餐|收藏|邮箱';
++                this.autoExcludeNodes = localStorage.getItem('clashAutoExcludeNodes') ?? 'US-LAX|JP-TYO|TW-TPE|KR-INC';
 +                this.remoteConfigUrl = localStorage.getItem('clashRemoteConfigUrl') || '';
                  this.configEditor = localStorage.getItem('configEditor') || '';
                  this.configType = localStorage.getItem('configType') || 'singbox';
                  this.customShortCode = localStorage.getItem('customShortCode') || '';
-@@ -162,6 +172,8 @@ export const formLogicFn = (t) => {
+@@ -162,6 +174,9 @@ export const formLogicFn = (t) => {
                  });
                  this.$watch('showAdvanced', val => localStorage.setItem('advancedToggle', val));
                  this.$watch('groupByCountry', val => localStorage.setItem('groupByCountry', val));
 +                this.$watch('excludeNodes', val => localStorage.setItem('clashExcludeNodes', val));
++                this.$watch('autoExcludeNodes', val => localStorage.setItem('clashAutoExcludeNodes', val));
 +                this.$watch('remoteConfigUrl', val => localStorage.setItem('clashRemoteConfigUrl', val));
                  this.$watch('includeAutoSelect', val => localStorage.setItem('includeAutoSelect', val));
                  this.$watch('enableClashUI', val => localStorage.setItem('enableClashUI', val));
                  this.$watch('externalController', val => localStorage.setItem('externalController', val));
-@@ -344,14 +356,63 @@ export const formLogicFn = (t) => {
+@@ -344,14 +359,64 @@ export const formLogicFn = (t) => {
              clearAll() {
                  if (confirm(window.APP_TRANSLATIONS.confirmClearAll)) {
                      this.input = '';
@@ -440,6 +455,7 @@ index 57f401f..e71025f 100644
 +                    this.resetLinkResults();
                      this.customShortCode = '';
 +                    this.excludeNodes = '';
++                    this.autoExcludeNodes = '';
 +                    this.remoteConfigUrl = '';
                      // Also clear from localStorage
                      localStorage.removeItem('customShortCode');
@@ -497,7 +513,7 @@ index 57f401f..e71025f 100644
              updateConfigIdInUrl(configId) {
                  const url = new URL(window.location.href);
                  if (configId) {
-@@ -364,8 +425,17 @@ export const formLogicFn = (t) => {
+@@ -364,8 +429,19 @@ export const formLogicFn = (t) => {
  
              async submitForm() {
                  this.loading = true;
@@ -511,17 +527,20 @@ index 57f401f..e71025f 100644
 +                    // Read current controls before generating, including autofill/datalist updates.
 +                    const remoteField = document.getElementById?.('remoteConfigUrl');
 +                    const excludeField = document.getElementById?.('excludeNodes');
++                    const autoExcludeField = document.getElementById?.('autoExcludeNodes');
 +                    if (remoteField) this.remoteConfigUrl = remoteField.value;
 +                    if (excludeField) this.excludeNodes = excludeField.value;
++                    if (autoExcludeField) this.autoExcludeNodes = autoExcludeField.value;
                      // Get custom rules from the child component via the hidden input
                      const customRulesInput = document.querySelector('input[name="customRules"]');
                      const customRules = customRulesInput && customRulesInput.value ? JSON.parse(customRulesInput.value) : [];
-@@ -392,13 +462,17 @@ export const formLogicFn = (t) => {
+@@ -392,13 +468,18 @@ export const formLogicFn = (t) => {
                      }
  
                      const queryString = params.toString();
 +                    const clashParams = new URLSearchParams(params);
 +                    if (this.excludeNodes.trim()) clashParams.set('exclude', this.excludeNodes.trim());
++                    clashParams.set('auto_exclude', this.autoExcludeNodes.trim());
 +                    if (this.remoteConfigUrl.trim()) clashParams.set('remote_config', this.remoteConfigUrl.trim());
  
                      this.generatedLinks = {
@@ -535,7 +554,7 @@ index 57f401f..e71025f 100644
  
                      // Scroll to results
                      setTimeout(() => {
-@@ -428,6 +502,9 @@ export const formLogicFn = (t) => {
+@@ -428,6 +509,9 @@ export const formLogicFn = (t) => {
                  }
  
                  this.shortening = true;
@@ -545,7 +564,7 @@ index 57f401f..e71025f 100644
                  try {
                      const origin = window.location.origin;
                      const shortened = {};
-@@ -437,7 +514,8 @@ export const formLogicFn = (t) => {
+@@ -437,7 +521,8 @@ export const formLogicFn = (t) => {
                      let isFirstRequest = true;
  
                      // Shorten each link type
@@ -555,7 +574,7 @@ index 57f401f..e71025f 100644
                          try {
                              let apiUrl = `${origin}/shorten-v2?url=${encodeURIComponent(url)}`;
  
-@@ -448,6 +526,7 @@ export const formLogicFn = (t) => {
+@@ -448,6 +533,7 @@ export const formLogicFn = (t) => {
                              }
  
                              const response = await fetch(apiUrl);
@@ -563,7 +582,7 @@ index 57f401f..e71025f 100644
                              if (!response.ok) {
                                  throw new Error(`Failed to shorten ${type} link`);
                              }
-@@ -475,12 +554,13 @@ export const formLogicFn = (t) => {
+@@ -475,12 +561,13 @@ export const formLogicFn = (t) => {
                          }
                      }
  
@@ -579,7 +598,7 @@ index 57f401f..e71025f 100644
                  }
              },
  
-@@ -536,6 +616,7 @@ export const formLogicFn = (t) => {
+@@ -536,6 +623,7 @@ export const formLogicFn = (t) => {
                  }
  
                  this.parsingUrl = true;
@@ -587,7 +606,7 @@ index 57f401f..e71025f 100644
                  try {
                      let urlToParse;
  
-@@ -566,6 +647,7 @@ export const formLogicFn = (t) => {
+@@ -566,6 +654,7 @@ export const formLogicFn = (t) => {
                      }
  
                      // Now parse the full URL and populate form
@@ -595,41 +614,44 @@ index 57f401f..e71025f 100644
                      this.populateFormFromUrl(urlToParse);
  
                      // Show a success message
-@@ -635,6 +717,8 @@ export const formLogicFn = (t) => {
+@@ -635,6 +724,9 @@ export const formLogicFn = (t) => {
                  }
  
                  const ua = params.get('ua');
 +                this.excludeNodes = params.get('exclude') || '';
++                if (params.has('auto_exclude')) this.autoExcludeNodes = params.get('auto_exclude');
 +                this.remoteConfigUrl = params.get('remote_config') || '';
                  if (ua) {
                      this.customUA = ua;
                  }
-@@ -647,7 +731,7 @@ export const formLogicFn = (t) => {
+@@ -647,7 +739,7 @@ export const formLogicFn = (t) => {
  
                  // Expand advanced options if any advanced settings are present
                  if (selectedRules || customRules || this.groupByCountry || this.enableClashUI ||
 -                    externalController || externalUiDownloadUrl || ua || configId) {
-+                    externalController || externalUiDownloadUrl || ua || configId || this.excludeNodes || this.remoteConfigUrl) {
++                    externalController || externalUiDownloadUrl || ua || configId || this.excludeNodes || params.has('auto_exclude') || this.remoteConfigUrl) {
                      this.showAdvanced = true;
                  }
              }
 diff --git a/src/i18n/index.js b/src/i18n/index.js
-index 84ad13e..896e187 100644
+index 84ad13e..20b10bb 100644
 --- a/src/i18n/index.js
 +++ b/src/i18n/index.js
-@@ -29,6 +29,11 @@ export const translations = {
+@@ -29,6 +29,13 @@ export const translations = {
      shareUrls: '输入源',
      urlPlaceholder: '支持粘贴：分享链接、Clash 配置、Sing-Box 配置、Surge 配置...',
      advancedOptions: '高级选项',
 +    clashSubscriptionOptions: 'Clash 订阅设置',
 +    excludeNodes: '排除节点',
++    autoExcludeNodes: '自动选择排除节点',
++    autoExcludeNodesHelp: '仅从默认自动选择中排除匹配的节点，国家分组仍可选择。多个关键词用 | 分隔，支持正则；留空关闭排除。使用远程配置时以远程分组规则为准。',
 +    excludeNodesHelp: '按节点名称过滤，多个关键词用 | 分隔；支持正则。留空则保留全部节点。',
 +    remoteRoutingConfig: '远程配置（可选）',
 +    remoteRoutingHelp: '支持 HTTPS 地址的 ACL4SSR .ini 和 Clash YAML。启用后使用远程规则与策略组，节点仍来自上方订阅；页面规则选择仅用于其他格式。',
      baseConfigSettings: '基础配置设置',
      baseConfigTooltip: '在此处自定义您的基础配置',
      saveConfig: '保存配置',
-@@ -144,6 +149,10 @@ export const translations = {
+@@ -144,6 +151,10 @@ export const translations = {
      clashLink: 'Clash 链接',
      surgeLink: 'Surge 链接',
      copied: '已复制！',
@@ -640,19 +662,21 @@ index 84ad13e..896e187 100644
      shortening: '正在生成短链接...',
      alreadyShortened: '链接已经是短链接了！',
      shortenFailed: '生成短链接失败，请重试',
-@@ -192,6 +201,11 @@ export const translations = {
+@@ -192,6 +203,13 @@ export const translations = {
      shareUrls: 'Input Source',
      urlPlaceholder: 'Paste share links, Clash config, Sing-Box config, or Surge config...',
      advancedOptions: 'Advanced Options',
 +    clashSubscriptionOptions: 'Clash subscription options',
 +    excludeNodes: 'Exclude nodes',
++    autoExcludeNodes: 'Exclude nodes from automatic selection',
++    autoExcludeNodesHelp: 'Exclude matching names only from default automatic selection; country groups keep them. Use | or regular expressions. Leave empty to disable. Remote profiles use their own group rules.',
 +    excludeNodesHelp: 'Filter node names with keywords separated by | or regular expressions. Leave empty to keep all nodes.',
 +    remoteRoutingConfig: 'Remote configuration (optional)',
 +    remoteRoutingHelp: 'Supports HTTPS ACL4SSR .ini and Clash YAML. Remote routing replaces the page rule selection for Clash; nodes still come from your subscriptions.',
      baseConfigSettings: 'Base Config Settings',
      baseConfigTooltip: 'Customize your base configuration here',
      saveConfig: 'Save Config',
-@@ -306,6 +320,10 @@ export const translations = {
+@@ -306,6 +324,10 @@ export const translations = {
      clashLink: 'Clash Link',
      surgeLink: 'Surge Link',
      copied: 'Copied!',
@@ -663,19 +687,21 @@ index 84ad13e..896e187 100644
      shortening: 'Shortening...',
      alreadyShortened: 'Links are already shortened!',
      shortenFailed: 'Failed to shorten URLs. Please try again.',
-@@ -348,6 +366,11 @@ export const translations = {
+@@ -348,6 +370,13 @@ export const translations = {
      shareUrls: 'منبع ورودی',
      urlPlaceholder: 'لینک‌های اشتراک، پیکربندی Clash، Sing-Box یا Surge را جایگذاری کنید...',
      advancedOptions: 'گزینه‌های پیشرفته',
 +    clashSubscriptionOptions: 'تنظیمات اشتراک Clash',
 +    excludeNodes: 'حذف گره‌ها',
++    autoExcludeNodes: 'حذف از انتخاب خودکار',
++    autoExcludeNodesHelp: 'فقط انتخاب خودکار پیش‌فرض را فیلتر می‌کند. از | یا عبارت منظم استفاده کنید؛ خالی یعنی غیرفعال. گروه‌های کشور حفظ می‌شوند و تنظیمات راه دور قوانین خود را دارند.',
 +    excludeNodesHelp: 'نام گره‌ها را با کلمات جداشده با | یا عبارت منظم فیلتر کنید. برای حفظ همه گره‌ها خالی بگذارید.',
 +    remoteRoutingConfig: 'پیکربندی از راه دور (اختیاری)',
 +    remoteRoutingHelp: 'از HTTPS، ACL4SSR .ini و Clash YAML پشتیبانی می‌کند. قوانین و گروه‌ها از فایل راه دور و گره‌ها از اشتراک شما دریافت می‌شوند.',
      baseConfigSettings: 'تنظیمات پیکربندی پایه',
      baseConfigTooltip: 'پیکربندی پایه خود را اینجا سفارشی کنید',
      saveConfig: 'ذخیره پیکربندی',
-@@ -462,6 +485,10 @@ export const translations = {
+@@ -462,6 +491,10 @@ export const translations = {
      clashLink: 'لینک Clash',
      surgeLink: 'لینک Surge',
      copied: 'کپی شد!',
@@ -686,19 +712,21 @@ index 84ad13e..896e187 100644
      shortening: 'در حال کوتاه کردن...',
      alreadyShortened: 'لینک‌ها از قبل کوتاه شده‌اند!',
      shortenFailed: 'کوتاه کردن URL ناموفق بود. لطفاً دوباره تلاش کنید.',
-@@ -504,6 +531,11 @@ export const translations = {
+@@ -504,6 +537,13 @@ export const translations = {
      shareUrls: 'Источник ввода',
      urlPlaceholder: 'Вставьте ссылки, конфигурацию Clash, Sing-Box или Surge...',
      advancedOptions: 'Расширенные настройки',
 +    clashSubscriptionOptions: 'Настройки подписки Clash',
 +    excludeNodes: 'Исключить узлы',
++    autoExcludeNodes: 'Исключить из автовыбора',
++    autoExcludeNodesHelp: 'Только для стандартного автовыбора. Используйте | или регулярное выражение; пустое поле отключает фильтр. Группы стран сохраняют узлы, удалённые профили используют свои правила.',
 +    excludeNodesHelp: 'Фильтр имён: ключевые слова через | или регулярные выражения. Оставьте пустым, чтобы сохранить все узлы.',
 +    remoteRoutingConfig: 'Удалённая конфигурация (необязательно)',
 +    remoteRoutingHelp: 'Поддерживаются HTTPS, ACL4SSR .ini и Clash YAML. Правила и группы берутся из удалённого файла, узлы — из ваших подписок.',
      baseConfigSettings: 'Базовые настройки конфигурации',
      baseConfigTooltip: 'Настройте базовую конфигурацию здесь',
      saveConfig: 'Сохранить конфигурацию',
-@@ -618,6 +650,10 @@ export const translations = {
+@@ -618,6 +658,10 @@ export const translations = {
      clashLink: 'Ссылка Clash',
      surgeLink: 'Ссылка Surge',
      copied: 'Скопировано!',
@@ -940,7 +968,7 @@ index 0000000..20f6dde
 +    return yaml.dump(candidate);
 +}
 diff --git a/test/formLogic.test.js b/test/formLogic.test.js
-index 906549c..5386ab7 100644
+index 906549c..acd559c 100644
 --- a/test/formLogic.test.js
 +++ b/test/formLogic.test.js
 @@ -1,7 +1,14 @@
@@ -959,7 +987,7 @@ index 906549c..5386ab7 100644
    it('includes parseSurgeConfigInput definition in toString output', () => {
      const fnString = formLogicFn.toString();
  
-@@ -32,4 +39,58 @@ describe('formLogic toString fix', () => {
+@@ -32,4 +39,70 @@ describe('formLogic toString fix', () => {
      expect(typeof data.toggleAccordion).toBe('function');
      expect(data.showAdvanced).toBe(false);
    });
@@ -984,6 +1012,18 @@ index 906549c..5386ab7 100644
 +    await data.submitForm();
 +    expect(new URL(data.generatedLinks.clash).searchParams.get('remote_config')).toBe(field.value);
 +    expect(data.generatedRemoteConfigUrl).toBe(field.value);
++  });
++
++  it('uses the current auto-exclusion field and keeps an explicit empty override', async () => {
++    const field={value:'HK|JP'};
++    const data=makeData({document:{getElementById:id=>id==='autoExcludeNodes'?field:null}});
++    await data.submitForm();
++    expect(new URL(data.generatedLinks.clash).searchParams.get('auto_exclude')).toBe('HK|JP');
++    expect(new URL(data.generatedLinks.singbox).searchParams.has('auto_exclude')).toBe(false);
++    field.value=''; await data.submitForm();
++    const params=new URL(data.generatedLinks.clash).searchParams;
++    expect(params.has('auto_exclude')).toBe(true);
++    expect(params.get('auto_exclude')).toBe('');
 +  });
 +
 +  it('ignores an old short-link response after converting with a new remote address', async () => {
@@ -1019,13 +1059,26 @@ index 906549c..5386ab7 100644
 +  });
  });
 diff --git a/test/proxy-providers.test.js b/test/proxy-providers.test.js
-index afefb52..beebf75 100644
+index afefb52..0f9df8a 100644
 --- a/test/proxy-providers.test.js
 +++ b/test/proxy-providers.test.js
-@@ -47,6 +47,87 @@ describe('Auto Proxy Providers Detection', () => {
+@@ -47,6 +47,100 @@ describe('Auto Proxy Providers Detection', () => {
      });
  
      describe('Clash Builder', () => {
++        it('supports custom and empty automatic-selection exclusion patterns', async () => {
++            fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml, format: 'clash', url: 'https://example.com/clash-sub' });
++            for (const pattern of ['HK|JP', '']) {
++                const builder = new ClashConfigBuilder('https://example.com/clash-sub', [], [], null, 'zh-CN', 'test-agent', true);
++                builder.setAutoSelectExclusion(pattern);
++                const config = yaml.load(await builder.build());
++                expect(config['proxy-groups'].find(g => g.name === '⚡ 自动选择')['exclude-filter']).toBe(pattern || undefined);
++                expect(config['proxy-groups'].find(g => g.name === '🇭🇰 Hong Kong')).toBeDefined();
++            }
++            const builder = new ClashConfigBuilder('', [], [], null, 'zh-CN');
++            expect(() => builder.setAutoSelectExclusion('[')).toThrow();
++        });
++
 +        it('excludes selected routes only from default automatic selection', async () => {
 +            fetchSubscriptionWithFormat.mockResolvedValue({
 +                content: mockClashYaml.replace('HK-Node', 'TW-TPE-DC07-001[UDP]'),

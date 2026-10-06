@@ -47,6 +47,19 @@ describe('Auto Proxy Providers Detection', () => {
     });
 
     describe('Clash Builder', () => {
+        it('supports custom and empty automatic-selection exclusion patterns', async () => {
+            fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml, format: 'clash', url: 'https://example.com/clash-sub' });
+            for (const pattern of ['HK|JP', '']) {
+                const builder = new ClashConfigBuilder('https://example.com/clash-sub', [], [], null, 'zh-CN', 'test-agent', true);
+                builder.setAutoSelectExclusion(pattern);
+                const config = yaml.load(await builder.build());
+                expect(config['proxy-groups'].find(g => g.name === '⚡ 自动选择')['exclude-filter']).toBe(pattern || undefined);
+                expect(config['proxy-groups'].find(g => g.name === '🇭🇰 Hong Kong')).toBeDefined();
+            }
+            const builder = new ClashConfigBuilder('', [], [], null, 'zh-CN');
+            expect(() => builder.setAutoSelectExclusion('[')).toThrow();
+        });
+
         it('excludes selected routes only from default automatic selection', async () => {
             fetchSubscriptionWithFormat.mockResolvedValue({
                 content: mockClashYaml.replace('HK-Node', 'TW-TPE-DC07-001[UDP]'),

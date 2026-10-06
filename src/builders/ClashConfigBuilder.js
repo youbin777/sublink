@@ -60,6 +60,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
         this.providerCountryGroups = {};
         this.providerNodeNames = [];
         this.nodeExclusion = null;
+        this.autoSelectExclusion = compileNodePattern('US-LAX|JP-TYO|TW-TPE|KR-INC');
         this.manualGroupName = null;
         this.enableClashUI = enableClashUI;
         this.externalController = externalController;
@@ -97,6 +98,10 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
 
     setNodeExclusion(pattern) {
         this.nodeExclusion = compileNodePattern(pattern);
+    }
+
+    setAutoSelectExclusion(pattern) {
+        this.autoSelectExclusion = compileNodePattern(pattern);
     }
 
     getProviderNodeNames() {
@@ -382,7 +387,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
         const group = {
             name: autoName,
             type: 'url-test',
-            'exclude-filter': 'US-LAX|JP-TYO|TW-TPE|KR-INC',
+            ...(this.autoSelectExclusion ? { 'exclude-filter': this.autoSelectExclusion.source } : {}),
             proxies: deepCopy(uniqueNames(proxyList)),
             url: 'https://www.gstatic.com/generate_204',
             interval: 300,

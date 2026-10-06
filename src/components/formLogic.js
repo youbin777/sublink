@@ -100,6 +100,7 @@ export const formLogicFn = (t) => {
             configValidationMessage: '',
             customUA: '',
             excludeNodes: '',
+            autoExcludeNodes: 'US-LAX|JP-TYO|TW-TPE|KR-INC',
             remoteConfigUrl: '',
             loading: false,
             generatedLinks: null,
@@ -145,6 +146,7 @@ export const formLogicFn = (t) => {
                 this.externalUiDownloadUrl = localStorage.getItem('externalUiDownloadUrl') || '';
                 this.customUA = localStorage.getItem('userAgent') || '';
                 this.excludeNodes = localStorage.getItem('clashExcludeNodes') ?? '超时|官网|异常|重置|剩余|套餐|收藏|邮箱';
+                this.autoExcludeNodes = localStorage.getItem('clashAutoExcludeNodes') ?? 'US-LAX|JP-TYO|TW-TPE|KR-INC';
                 this.remoteConfigUrl = localStorage.getItem('clashRemoteConfigUrl') || '';
                 this.configEditor = localStorage.getItem('configEditor') || '';
                 this.configType = localStorage.getItem('configType') || 'singbox';
@@ -173,6 +175,7 @@ export const formLogicFn = (t) => {
                 this.$watch('showAdvanced', val => localStorage.setItem('advancedToggle', val));
                 this.$watch('groupByCountry', val => localStorage.setItem('groupByCountry', val));
                 this.$watch('excludeNodes', val => localStorage.setItem('clashExcludeNodes', val));
+                this.$watch('autoExcludeNodes', val => localStorage.setItem('clashAutoExcludeNodes', val));
                 this.$watch('remoteConfigUrl', val => localStorage.setItem('clashRemoteConfigUrl', val));
                 this.$watch('includeAutoSelect', val => localStorage.setItem('includeAutoSelect', val));
                 this.$watch('enableClashUI', val => localStorage.setItem('enableClashUI', val));
@@ -359,6 +362,7 @@ export const formLogicFn = (t) => {
                     this.resetLinkResults();
                     this.customShortCode = '';
                     this.excludeNodes = '';
+                    this.autoExcludeNodes = '';
                     this.remoteConfigUrl = '';
                     // Also clear from localStorage
                     localStorage.removeItem('customShortCode');
@@ -434,8 +438,10 @@ export const formLogicFn = (t) => {
                     // Read current controls before generating, including autofill/datalist updates.
                     const remoteField = document.getElementById?.('remoteConfigUrl');
                     const excludeField = document.getElementById?.('excludeNodes');
+                    const autoExcludeField = document.getElementById?.('autoExcludeNodes');
                     if (remoteField) this.remoteConfigUrl = remoteField.value;
                     if (excludeField) this.excludeNodes = excludeField.value;
+                    if (autoExcludeField) this.autoExcludeNodes = autoExcludeField.value;
                     // Get custom rules from the child component via the hidden input
                     const customRulesInput = document.querySelector('input[name="customRules"]');
                     const customRules = customRulesInput && customRulesInput.value ? JSON.parse(customRulesInput.value) : [];
@@ -464,6 +470,7 @@ export const formLogicFn = (t) => {
                     const queryString = params.toString();
                     const clashParams = new URLSearchParams(params);
                     if (this.excludeNodes.trim()) clashParams.set('exclude', this.excludeNodes.trim());
+                    clashParams.set('auto_exclude', this.autoExcludeNodes.trim());
                     if (this.remoteConfigUrl.trim()) clashParams.set('remote_config', this.remoteConfigUrl.trim());
 
                     this.generatedLinks = {
@@ -718,6 +725,7 @@ export const formLogicFn = (t) => {
 
                 const ua = params.get('ua');
                 this.excludeNodes = params.get('exclude') || '';
+                if (params.has('auto_exclude')) this.autoExcludeNodes = params.get('auto_exclude');
                 this.remoteConfigUrl = params.get('remote_config') || '';
                 if (ua) {
                     this.customUA = ua;
@@ -731,7 +739,7 @@ export const formLogicFn = (t) => {
 
                 // Expand advanced options if any advanced settings are present
                 if (selectedRules || customRules || this.groupByCountry || this.enableClashUI ||
-                    externalController || externalUiDownloadUrl || ua || configId || this.excludeNodes || this.remoteConfigUrl) {
+                    externalController || externalUiDownloadUrl || ua || configId || this.excludeNodes || params.has('auto_exclude') || this.remoteConfigUrl) {
                     this.showAdvanced = true;
                 }
             }

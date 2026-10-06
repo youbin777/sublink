@@ -62,6 +62,18 @@ describe('formLogic toString fix', () => {
     expect(data.generatedRemoteConfigUrl).toBe(field.value);
   });
 
+  it('uses the current auto-exclusion field and keeps an explicit empty override', async () => {
+    const field={value:'HK|JP'};
+    const data=makeData({document:{getElementById:id=>id==='autoExcludeNodes'?field:null}});
+    await data.submitForm();
+    expect(new URL(data.generatedLinks.clash).searchParams.get('auto_exclude')).toBe('HK|JP');
+    expect(new URL(data.generatedLinks.singbox).searchParams.has('auto_exclude')).toBe(false);
+    field.value=''; await data.submitForm();
+    const params=new URL(data.generatedLinks.clash).searchParams;
+    expect(params.has('auto_exclude')).toBe(true);
+    expect(params.get('auto_exclude')).toBe('');
+  });
+
   it('ignores an old short-link response after converting with a new remote address', async () => {
     let release;
     const fetchMock=vi.fn().mockImplementationOnce(()=>new Promise(resolve=>release=resolve)).mockImplementation(async()=>new Response('oldcode'));
