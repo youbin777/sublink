@@ -169,6 +169,7 @@ export function createApp(bindings = {}) {
             await builder.build();
             const userinfo = builder.getSubscriptionUserinfo();
             const headers = { 'Content-Type': 'text/yaml; charset=utf-8' };
+            if (remoteConfigUrl) headers['Cache-Control'] = 'no-store';
             if (userinfo) {
                 headers['subscription-userinfo'] = userinfo;
             }

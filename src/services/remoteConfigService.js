@@ -24,7 +24,7 @@ export async function loadRemoteRouting(value) {
     let url = publicHttpsUrl(value);
     for (let hop = 0; hop <= 3; hop++) {
         let response;
-        try { response = await fetch(url.toString(), { redirect: 'manual', signal: AbortSignal.timeout(10000) }); }
+        try { response = await fetch(url.toString(), { redirect: 'manual', signal: AbortSignal.timeout(10000), headers: { 'Cache-Control':'no-cache', 'Pragma':'no-cache' }, cf: { cacheTtl:0 } }); }
         catch (_) { throw new InvalidPayloadError('Could not fetch remote configuration'); }
         if ([301, 302, 303, 307, 308].includes(response.status)) {
             const location = response.headers.get('location');

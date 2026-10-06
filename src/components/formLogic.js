@@ -103,6 +103,12 @@ export const formLogicFn = (t) => {
             remoteConfigUrl: '',
             loading: false,
             generatedLinks: null,
+            linkGeneration: 0,
+            shorteningGeneration: 0,
+            copiedLink: null,
+            copyOperation: 0,
+            copyError: '',
+            generatedRemoteConfigUrl: '',
             shortenedLinks: null,
             shortening: false,
             customShortCode: '',
@@ -350,14 +356,61 @@ export const formLogicFn = (t) => {
             clearAll() {
                 if (confirm(window.APP_TRANSLATIONS.confirmClearAll)) {
                     this.input = '';
-                    this.generatedLinks = null;
-                    this.shortenedLinks = null;
+                    this.resetLinkResults();
                     this.customShortCode = '';
                     this.excludeNodes = '';
                     this.remoteConfigUrl = '';
                     // Also clear from localStorage
                     localStorage.removeItem('customShortCode');
                 }
+            },
+
+            resetLinkResults() {
+                this.linkGeneration += 1;
+                this.copyOperation += 1;
+                this.generatedLinks = null;
+                this.shortenedLinks = null;
+                this.shortening = false;
+                this.shorteningGeneration = this.linkGeneration;
+                this.copiedLink = null;
+                this.copyError = '';
+                this.generatedRemoteConfigUrl = '';
+            },
+
+            async copyLink(type) {
+                const value = (this.shortenedLinks || this.generatedLinks)?.[type];
+                if (typeof value !== 'string' || !value) return false;
+                const generation = this.linkGeneration;
+                const operation = ++this.copyOperation;
+                this.copiedLink = null;
+                this.copyError = '';
+                let copied = false;
+                try {
+                    if (window.navigator?.clipboard?.writeText) {
+                        await window.navigator.clipboard.writeText(value);
+                        copied = true;
+                    }
+                } catch (_) { }
+                if (generation !== this.linkGeneration || operation !== this.copyOperation) return false;
+                if (!copied) {
+                    const input = document.getElementById?.('generated-link-' + type);
+                    if (input) {
+                        input.value = value;
+                        input.focus();
+                        input.select();
+                        input.setSelectionRange?.(0, value.length);
+                        try { copied = typeof document.execCommand === 'function' && document.execCommand('copy'); } catch (_) { }
+                    }
+                }
+                if (copied) {
+                    this.copiedLink = type;
+                    setTimeout(() => {
+                        if (generation === this.linkGeneration && operation === this.copyOperation) this.copiedLink = null;
+                    }, 2000);
+                } else {
+                    this.copyError = window.APP_TRANSLATIONS?.manualCopyHelp || '复制未成功，请选中链接后按 Ctrl+C（Mac：⌘C）。';
+                }
+                return Boolean(copied);
             },
 
             updateConfigIdInUrl(configId) {
@@ -372,8 +425,17 @@ export const formLogicFn = (t) => {
 
             async submitForm() {
                 this.loading = true;
-                this.shortenedLinks = null; // Reset shortened links when generating new links
+                this.resetLinkResults();
+                if (this.parseDebounceTimer) {
+                    clearTimeout(this.parseDebounceTimer);
+                    this.parseDebounceTimer = null;
+                }
                 try {
+                    // Read current controls before generating, including autofill/datalist updates.
+                    const remoteField = document.getElementById?.('remoteConfigUrl');
+                    const excludeField = document.getElementById?.('excludeNodes');
+                    if (remoteField) this.remoteConfigUrl = remoteField.value;
+                    if (excludeField) this.excludeNodes = excludeField.value;
                     // Get custom rules from the child component via the hidden input
                     const customRulesInput = document.querySelector('input[name="customRules"]');
                     const customRules = customRulesInput && customRulesInput.value ? JSON.parse(customRulesInput.value) : [];
@@ -410,6 +472,7 @@ export const formLogicFn = (t) => {
                         clash: origin + '/clash?' + clashParams.toString(),
                         surge: origin + '/surge?' + queryString
                     };
+                    this.generatedRemoteConfigUrl = this.remoteConfigUrl.trim();
 
                     // Scroll to results
                     setTimeout(() => {
@@ -439,6 +502,9 @@ export const formLogicFn = (t) => {
                 }
 
                 this.shortening = true;
+                const generation = this.linkGeneration;
+                this.shorteningGeneration = generation;
+                const links = { ...this.generatedLinks };
                 try {
                     const origin = window.location.origin;
                     const shortened = {};
@@ -448,7 +514,8 @@ export const formLogicFn = (t) => {
                     let isFirstRequest = true;
 
                     // Shorten each link type
-                    for (const [type, url] of Object.entries(this.generatedLinks)) {
+                    for (const [type, url] of Object.entries(links)) {
+                        if (generation !== this.linkGeneration) return;
                         try {
                             let apiUrl = `${origin}/shorten-v2?url=${encodeURIComponent(url)}`;
 
@@ -459,6 +526,7 @@ export const formLogicFn = (t) => {
                             }
 
                             const response = await fetch(apiUrl);
+                            if (generation !== this.linkGeneration) return;
                             if (!response.ok) {
                                 throw new Error(`Failed to shorten ${type} link`);
                             }
@@ -486,12 +554,13 @@ export const formLogicFn = (t) => {
                         }
                     }
 
-                    this.shortenedLinks = shortened;
+                    if (generation === this.linkGeneration) this.shortenedLinks = shortened;
                 } catch (error) {
+                    if (generation !== this.linkGeneration) return;
                     console.error('Error shortening links:', error);
                     alert(window.APP_TRANSLATIONS.shortenFailed);
                 } finally {
-                    this.shortening = false;
+                    if (generation === this.shorteningGeneration) this.shortening = false;
                 }
             },
 
@@ -547,6 +616,7 @@ export const formLogicFn = (t) => {
                 }
 
                 this.parsingUrl = true;
+                const generation = this.linkGeneration;
                 try {
                     let urlToParse;
 
@@ -577,6 +647,7 @@ export const formLogicFn = (t) => {
                     }
 
                     // Now parse the full URL and populate form
+                    if (generation !== this.linkGeneration || this.input.trim() !== text) return;
                     this.populateFormFromUrl(urlToParse);
 
                     // Show a success message

@@ -34,7 +34,8 @@ export const Form = (props) => {
     customShortCode: t('customShortCode'),
     optional: t('optional'),
     customShortCodePlaceholder: t('customShortCodePlaceholder'),
-    showFullLinks: t('showFullLinks')
+    showFullLinks: t('showFullLinks'),
+    manualCopyHelp: t('manualCopyHelp')
   };
 
   const scriptContent = `
@@ -359,7 +360,7 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
       </form>
 
   {/* Results Section */ }
-  <div x-cloak x-show="generatedLinks" x-data="{ copied: null }" {...{'x-transition:enter': 'transition ease-out duration-500', 'x-transition:enter-start': 'opacity-0 transform translate-y-8', 'x-transition:enter-end': 'opacity-100 transform translate-y-0'}} class="mt-12">
+  <div x-cloak x-show="generatedLinks" {...{'x-transition:enter': 'transition ease-out duration-500', 'x-transition:enter-start': 'opacity-0 transform translate-y-8', 'x-transition:enter-end': 'opacity-100 transform translate-y-0'}} class="mt-12">
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-8 transition-all duration-300 hover:shadow-md">
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <h2 class="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -371,6 +372,11 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
       </div>
 
       <div class="mt-6 space-y-4">
+        <p role="status" class="text-sm text-green-600 dark:text-green-400">{t('linksUpdated')}</p>
+        <p x-show="generatedRemoteConfigUrl" class="text-sm text-gray-500 dark:text-gray-400 break-all">
+          {t('generatedRemoteProfile')}: <span x-text="generatedRemoteConfigUrl"></span>
+        </p>
+        <p x-show="copyError" role="alert" class="text-sm text-red-600 dark:text-red-400" x-text="copyError"></p>
         {LINK_FIELDS.map((field) => (
           <div class="relative group" key={field.key}>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -378,24 +384,30 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
             </label>
             <div class="flex gap-2">
               <input
+                id={`generated-link-${field.key}`}
                 type="text"
                 readonly
                 x-bind:value={`shortenedLinks ? shortenedLinks?.${field.key} : generatedLinks?.${field.key}`}
-                class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:border-transparent transition-all duration-200 font-mono text-sm"
+                class="flex-1 min-w-0 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:border-transparent transition-all duration-200 font-mono text-sm"
                 x-bind:class="shortenedLinks ? 'text-primary-600 dark:text-primary-400 font-semibold focus:ring-primary-500' : 'text-gray-600 dark:text-gray-400 focus:ring-green-500'"
               />
               <button
                 type="button"
-                x-on:click={`navigator.clipboard.writeText((shortenedLinks || generatedLinks)?.${field.key}); copied = '${field.key}'; setTimeout(() => copied = null, 2000)`}
-                class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+                x-on:click={`copyLink('${field.key}')`}
+                aria-label={`${t('copyLinkButton')} ${t(field.labelKey)}`}
+                class="shrink-0 px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
                 x-bind:class={`{
                   'hover:bg-green-100 dark:hover:bg-green-900/30 hover:text-green-600 dark:hover:text-green-400': !shortenedLinks,
                   'hover:bg-primary-100 dark:hover:bg-primary-900/30 hover:text-primary-600 dark:hover:text-primary-400': shortenedLinks,
-                  'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400': !shortenedLinks && copied === '${field.key}',
-                  'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400': shortenedLinks && copied === '${field.key}'
+                  'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400': !shortenedLinks && copiedLink === '${field.key}',
+                  'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400': shortenedLinks && copiedLink === '${field.key}'
                 }`}
               >
-                <i class="fas" x-bind:class={`copied === '${field.key}' ? 'fa-check' : 'fa-copy'`}></i>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span x-text={`copiedLink === '${field.key}' ? '${t('copied')}' : '${t('copyLinkButton')}'`}>{t('copyLinkButton')}</span>
               </button>
             </div>
           </div>

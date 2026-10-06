@@ -416,7 +416,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
 
         // Add 'use' field if we have proxy-providers
         const providerNames = this.getAllProviderNames();
-        if (providerNames.length > 0) {
+        if (providerNames.length > 0 && !this.groupByCountry) {
             group.use = providerNames;
         }
 

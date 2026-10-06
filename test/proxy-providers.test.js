@@ -65,6 +65,7 @@ describe('Auto Proxy Providers Detection', () => {
             expect(new RegExp(hk.filter).test('JP-Node')).toBe(false);
             expect(new RegExp(jp.filter).test('JP-Node')).toBe(true);
             expect(config['proxy-groups'].find(g => g.name === '🚀 节点选择').proxies).toContain(hk.name);
+            expect(config['proxy-groups'].find(g => g.name === '🚀 节点选择').use).toBeUndefined();
         });
 
         it('offers countries instead of provider nodes in service selectors', async () => {
