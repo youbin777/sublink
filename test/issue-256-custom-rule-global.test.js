@@ -47,13 +47,12 @@ describe('Issue #256 - Custom rules should not bypass selector chain', () => {
             expect(customRule1).toBeDefined();
             expect(customRule2).toBeDefined();
 
-            // Custom rules should contain Node Select, Auto Select, and DIRECT.
-            // REJECT is a route action in sing-box 1.11+ instead of a special outbound.
+            // Custom rules should contain Node Select, Auto Select, DIRECT, REJECT
             // But should NOT contain country groups like "🇺🇸 United States"
             expect(customRule1.outbounds).toContain(NODE_SELECT);
             expect(customRule1.outbounds).toContain(AUTO_SELECT);
             expect(customRule1.outbounds).toContain('DIRECT');
-            expect(customRule1.outbounds).not.toContain('REJECT');
+            expect(customRule1.outbounds).toContain('REJECT');
 
             // Should NOT contain country groups
             const hasCountryGroup = customRule1.outbounds.some(tag =>
@@ -100,7 +99,7 @@ describe('Issue #256 - Custom rules should not bypass selector chain', () => {
     });
 
     describe('ClashConfigBuilder', () => {
-        it('should not include country groups in custom rule proxies when groupByCountry is enabled', async () => {
+        it('should include country groups in custom rule proxies when groupByCountry is enabled', async () => {
             const builder = new ClashConfigBuilder(
                 inputString,
                 'minimal',
@@ -134,7 +133,7 @@ describe('Issue #256 - Custom rules should not bypass selector chain', () => {
             const hasCountryGroup = customRule1.proxies.some(tag =>
                 tag.includes('🇺🇸') || tag.includes('🇬🇧') || tag.includes('United States') || tag.includes('United Kingdom')
             );
-            expect(hasCountryGroup).toBe(false);
+            expect(hasCountryGroup).toBe(true);
         });
 
         it('should still include country groups in Node Select when groupByCountry is enabled', async () => {

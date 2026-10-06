@@ -47,6 +47,20 @@ describe('Auto Proxy Providers Detection', () => {
     });
 
     describe('Clash Builder', () => {
+        it('offers countries in a Notion custom group without expanding provider nodes', async () => {
+            fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml, format: 'clash', url: 'https://example.com/clash-sub' });
+            const rules = [{ name: '📝 Notion', domain_suffix: ['notion.so'], site_rules: [], ip_rules: [] }];
+            const builder = new ClashConfigBuilder('https://example.com/clash-sub', ['Youtube'], rules, null, 'zh-CN', 'test-agent', true);
+            const config = yaml.load(await builder.build());
+            const notion = config['proxy-groups'].find(g => g.name === '📝 Notion');
+            expect(notion.proxies).toContain('🇭🇰 Hong Kong');
+            expect(notion.proxies).toContain('🇯🇵 Japan');
+            expect(notion.proxies).toContain('🖐️ 手动切换');
+            expect(notion.proxies).not.toContain('HK-Node');
+            expect(notion.use).toBeUndefined();
+            expect(config.rules).toContain('DOMAIN-SUFFIX,notion.so,📝 Notion');
+        });
+
         it('offers manual switching in all policy selectors for provider-only subscriptions', async () => {
             fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml, format: 'clash', url: 'https://example.com/clash-sub' });
             for (const countryMode of [true, false]) {

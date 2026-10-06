@@ -83,7 +83,7 @@ describe('Issue #371 - custom rule groups keep full proxy choices without countr
         expectCompleteOptionsWithoutCountries(customRule.outbounds, expectedFlatMembers);
     });
 
-    it('Clash custom rule includes direct proxy choices when groupByCountry is enabled', async () => {
+    it('Clash custom rule offers country choices when groupByCountry is enabled', async () => {
         const builder = new ClashConfigBuilder(
             inputString,
             'minimal',
@@ -101,7 +101,11 @@ describe('Issue #371 - custom rule groups keep full proxy choices without countr
         await builder.build();
 
         const customRule = builder.config['proxy-groups'].find(group => group?.name === 'Custom-Rule');
-        expectCompleteOptionsWithoutCountries(customRule.proxies, expectedCountryMembers);
+        expect(customRule.proxies).toContain('🇺🇸 United States');
+        expect(customRule.proxies).toContain('🇬🇧 United Kingdom');
+        expect(customRule.proxies).toContain('🖐️ 手动切换');
+        expect(customRule.proxies).not.toContain('US-Node-1');
+        expect(customRule.proxies).not.toContain('UK-Node-1');
     });
 
     it('Clash custom rule includes direct proxy choices when groupByCountry is disabled', async () => {

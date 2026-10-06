@@ -152,7 +152,7 @@ index 0da4b82..220a0da 100644
          if (this.autoProviderDescriptors) {
              return this.autoProviderDescriptors;
 diff --git a/src/builders/ClashConfigBuilder.js b/src/builders/ClashConfigBuilder.js
-index fe03684..1e7daf3 100644
+index fe03684..83ae7f4 100644
 --- a/src/builders/ClashConfigBuilder.js
 +++ b/src/builders/ClashConfigBuilder.js
 @@ -1,12 +1,13 @@
@@ -287,6 +287,24 @@ index fe03684..1e7daf3 100644
          }
  
 @@ -412,7 +485,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+                     };
+                     // Add 'use' field if we have proxy-providers
+                     const providerNames = this.getAllProviderNames();
+-                    if (providerNames.length > 0) {
++                    if (providerNames.length > 0 && !this.groupByCountry) {
+                         group.use = providerNames;
+                     }
+                     this.config['proxy-groups'].push(group);
+@@ -426,7 +499,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+             this.customRules.forEach(rule => {
+                 const name = this.t(`outboundNames.${rule.name}`);
+                 if (!this.hasProxyGroup(name)) {
+-                    const proxies = buildCustomRuleMembers({
++                    const proxies = this.groupByCountry ? this.buildSelectGroupMembers(proxyList) : buildCustomRuleMembers({
+                         proxyList,
+                         translator: this.t,
+                         manualGroupName: this.manualGroupName,
+@@ -439,7 +512,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                      };
                      // Add 'use' field if we have proxy-providers
                      const providerNames = this.getAllProviderNames();
@@ -1109,11 +1127,55 @@ index 906549c..acd559c 100644
 +    expect(data.copyError).toBeTruthy();
 +  });
  });
+diff --git a/test/issue-256-custom-rule-global.test.js b/test/issue-256-custom-rule-global.test.js
+index 2d3d418..995b86e 100644
+--- a/test/issue-256-custom-rule-global.test.js
++++ b/test/issue-256-custom-rule-global.test.js
+@@ -99,7 +99,7 @@ describe('Issue #256 - Custom rules should not bypass selector chain', () => {
+     });
+ 
+     describe('ClashConfigBuilder', () => {
+-        it('should not include country groups in custom rule proxies when groupByCountry is enabled', async () => {
++        it('should include country groups in custom rule proxies when groupByCountry is enabled', async () => {
+             const builder = new ClashConfigBuilder(
+                 inputString,
+                 'minimal',
+@@ -133,7 +133,7 @@ describe('Issue #256 - Custom rules should not bypass selector chain', () => {
+             const hasCountryGroup = customRule1.proxies.some(tag =>
+                 tag.includes('🇺🇸') || tag.includes('🇬🇧') || tag.includes('United States') || tag.includes('United Kingdom')
+             );
+-            expect(hasCountryGroup).toBe(false);
++            expect(hasCountryGroup).toBe(true);
+         });
+ 
+         it('should still include country groups in Node Select when groupByCountry is enabled', async () => {
 diff --git a/test/issue-371-custom-rule-options.test.js b/test/issue-371-custom-rule-options.test.js
-index 7388bbe..7c23cef 100644
+index 7388bbe..654709e 100644
 --- a/test/issue-371-custom-rule-options.test.js
 +++ b/test/issue-371-custom-rule-options.test.js
-@@ -122,7 +122,7 @@ describe('Issue #371 - custom rule groups keep full proxy choices without countr
+@@ -83,7 +83,7 @@ describe('Issue #371 - custom rule groups keep full proxy choices without countr
+         expectCompleteOptionsWithoutCountries(customRule.outbounds, expectedFlatMembers);
+     });
+ 
+-    it('Clash custom rule includes direct proxy choices when groupByCountry is enabled', async () => {
++    it('Clash custom rule offers country choices when groupByCountry is enabled', async () => {
+         const builder = new ClashConfigBuilder(
+             inputString,
+             'minimal',
+@@ -101,7 +101,11 @@ describe('Issue #371 - custom rule groups keep full proxy choices without countr
+         await builder.build();
+ 
+         const customRule = builder.config['proxy-groups'].find(group => group?.name === 'Custom-Rule');
+-        expectCompleteOptionsWithoutCountries(customRule.proxies, expectedCountryMembers);
++        expect(customRule.proxies).toContain('🇺🇸 United States');
++        expect(customRule.proxies).toContain('🇬🇧 United Kingdom');
++        expect(customRule.proxies).toContain('🖐️ 手动切换');
++        expect(customRule.proxies).not.toContain('US-Node-1');
++        expect(customRule.proxies).not.toContain('UK-Node-1');
+     });
+ 
+     it('Clash custom rule includes direct proxy choices when groupByCountry is disabled', async () => {
+@@ -122,7 +126,7 @@ describe('Issue #371 - custom rule groups keep full proxy choices without countr
          await builder.build();
  
          const customRule = builder.config['proxy-groups'].find(group => group?.name === 'Custom-Rule');
@@ -1123,13 +1185,27 @@ index 7388bbe..7c23cef 100644
  
      it('Surge custom rule includes direct proxy choices when groupByCountry is enabled', async () => {
 diff --git a/test/proxy-providers.test.js b/test/proxy-providers.test.js
-index afefb52..2748fed 100644
+index afefb52..0ea1530 100644
 --- a/test/proxy-providers.test.js
 +++ b/test/proxy-providers.test.js
-@@ -47,6 +47,122 @@ describe('Auto Proxy Providers Detection', () => {
+@@ -47,6 +47,136 @@ describe('Auto Proxy Providers Detection', () => {
      });
  
      describe('Clash Builder', () => {
++        it('offers countries in a Notion custom group without expanding provider nodes', async () => {
++            fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml, format: 'clash', url: 'https://example.com/clash-sub' });
++            const rules = [{ name: '📝 Notion', domain_suffix: ['notion.so'], site_rules: [], ip_rules: [] }];
++            const builder = new ClashConfigBuilder('https://example.com/clash-sub', ['Youtube'], rules, null, 'zh-CN', 'test-agent', true);
++            const config = yaml.load(await builder.build());
++            const notion = config['proxy-groups'].find(g => g.name === '📝 Notion');
++            expect(notion.proxies).toContain('🇭🇰 Hong Kong');
++            expect(notion.proxies).toContain('🇯🇵 Japan');
++            expect(notion.proxies).toContain('🖐️ 手动切换');
++            expect(notion.proxies).not.toContain('HK-Node');
++            expect(notion.use).toBeUndefined();
++            expect(config.rules).toContain('DOMAIN-SUFFIX,notion.so,📝 Notion');
++        });
++
 +        it('offers manual switching in all policy selectors for provider-only subscriptions', async () => {
 +            fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml, format: 'clash', url: 'https://example.com/clash-sub' });
 +            for (const countryMode of [true, false]) {

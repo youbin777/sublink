@@ -499,7 +499,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
             this.customRules.forEach(rule => {
                 const name = this.t(`outboundNames.${rule.name}`);
                 if (!this.hasProxyGroup(name)) {
-                    const proxies = buildCustomRuleMembers({
+                    const proxies = this.groupByCountry ? this.buildSelectGroupMembers(proxyList) : buildCustomRuleMembers({
                         proxyList,
                         translator: this.t,
                         manualGroupName: this.manualGroupName,
@@ -512,7 +512,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                     };
                     // Add 'use' field if we have proxy-providers
                     const providerNames = this.getAllProviderNames();
-                    if (providerNames.length > 0) {
+                    if (providerNames.length > 0 && !this.groupByCountry) {
                         group.use = providerNames;
                     }
                     this.config['proxy-groups'].push(group);
