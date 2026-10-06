@@ -209,6 +209,7 @@ export const formLogicFn = (t) => {
             },
 
             getSubconverterUrl() {
+                if (this.remoteConfigUrl.trim()) return '';
                 const origin = window.location.origin;
                 const params = new URLSearchParams();
 
@@ -248,6 +249,7 @@ export const formLogicFn = (t) => {
 
             copySubconverterUrl() {
                 const url = this.getSubconverterUrl();
+                if (!url) return;
                 navigator.clipboard.writeText(url).then(() => {
                     this.subconverterCopied = true;
                     setTimeout(() => this.subconverterCopied = false, 2000);

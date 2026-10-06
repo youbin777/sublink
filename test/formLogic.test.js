@@ -62,6 +62,19 @@ describe('formLogic toString fix', () => {
     expect(data.generatedRemoteConfigUrl).toBe(field.value);
   });
 
+  it('disables external configuration while a remote profile is set and restores it on clearing', () => {
+    const writeText=vi.fn();
+    const data=makeData({navigator:{clipboard:{writeText}}});
+    const original=data.getSubconverterUrl();
+    expect(original).toContain('/subconverter');
+    data.remoteConfigUrl='https://example.com/profile.ini';
+    expect(data.getSubconverterUrl()).toBe('');
+    data.copySubconverterUrl();
+    expect(writeText).not.toHaveBeenCalled();
+    data.remoteConfigUrl='';
+    expect(data.getSubconverterUrl()).toBe(original);
+  });
+
   it('uses the current auto-exclusion field and keeps an explicit empty override', async () => {
     const field={value:'HK|JP'};
     const data=makeData({document:{getElementById:id=>id==='autoExcludeNodes'?field:null}});

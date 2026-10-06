@@ -373,7 +373,7 @@ index fe03684..83ae7f4 100644
                  this.config['proxy-groups'].push(group);
                  existingNames.add(norm);
 diff --git a/src/components/Form.jsx b/src/components/Form.jsx
-index 31218b9..d74a5f1 100644
+index 31218b9..4e17dba 100644
 --- a/src/components/Form.jsx
 +++ b/src/components/Form.jsx
 @@ -34,7 +34,8 @@ export const Form = (props) => {
@@ -386,22 +386,12 @@ index 31218b9..d74a5f1 100644
    };
  
    const scriptContent = `
-@@ -123,6 +124,28 @@ export const Form = (props) => {
+@@ -123,6 +124,18 @@ export const Form = (props) => {
    {/* Advanced Options Content */ }
    <div x-show="showAdvanced" {...{'x-transition:enter': 'transition ease-out duration-300', 'x-transition:enter-start': 'opacity-0 transform -translate-y-4', 'x-transition:enter-end': 'opacity-100 transform translate-y-0', 'x-transition:leave': 'transition ease-in duration-200', 'x-transition:leave-start': 'opacity-100 transform translate-y-0', 'x-transition:leave-end': 'opacity-0 transform -translate-y-4'}} class="space-y-6">
  
 +    <section class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-5">
-+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{t('clashSubscriptionOptions')}</h3>
-+      <div>
-+        <label for="excludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('excludeNodes')}</label>
-+        <input id="excludeNodes" name="exclude" type="text" x-model="excludeNodes" maxlength="512" placeholder="超时|官网|异常|重置|剩余|套餐|收藏|邮箱" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
-+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('excludeNodesHelp')}</p>
-+      </div>
-+      <div>
-+        <label for="autoExcludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('autoExcludeNodes')}</label>
-+        <input id="autoExcludeNodes" name="auto_exclude" type="text" x-model="autoExcludeNodes" maxlength="512" placeholder="US-LAX|JP-TYO|TW-TPE|KR-INC" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
-+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('autoExcludeNodesHelp')}</p>
-+      </div>
++      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{t('remoteRoutingConfig')}</h3>
 +      <div>
 +        <label for="remoteConfigUrl" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('remoteRoutingConfig')}</label>
 +        <input id="remoteConfigUrl" name="remote_config" type="url" x-model="remoteConfigUrl" list="remote-routing-presets" placeholder="https://example.com/config.ini" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
@@ -415,7 +405,44 @@ index 31218b9..d74a5f1 100644
      {/* Rule Selection */ }
      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
        <div class="flex items-center justify-between mb-4">
-@@ -342,7 +365,7 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
+@@ -168,6 +181,18 @@ export const Form = (props) => {
+             </h3>
+             
+             <div class="space-y-4">
++              <p class="text-sm text-gray-500 dark:text-gray-400">{t('clashSubscriptionOptions')}</p>
++      <div>
++        <label for="excludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('excludeNodes')}</label>
++        <input id="excludeNodes" name="exclude" type="text" x-model="excludeNodes" maxlength="512" placeholder="超时|官网|异常|重置|剩余|套餐|收藏|邮箱" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
++        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('excludeNodesHelp')}</p>
++      </div>
++      <div>
++        <label for="autoExcludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('autoExcludeNodes')}</label>
++        <input id="autoExcludeNodes" name="auto_exclude" type="text" x-model="autoExcludeNodes" maxlength="512" placeholder="US-LAX|JP-TYO|TW-TPE|KR-INC" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
++        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('autoExcludeNodesHelp')}</p>
++      </div>
++
+               <label class="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
+                 <span class="font-medium text-gray-700 dark:text-gray-300">{t('groupByCountry')}</span>
+                 <div class="relative inline-flex items-center cursor-pointer">
+@@ -223,6 +248,7 @@ export const Form = (props) => {
+       {t('subconverterConfigTitle')}
+     </h3>
+     <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{t('subconverterConfigDesc')}</p>
++    <p x-show="remoteConfigUrl.trim()" class="text-sm text-amber-600 dark:text-amber-400 mb-4">{t('subconverterRemoteDisabled')}</p>
+     <div class="px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+       <p class="font-mono text-sm text-gray-600 dark:text-gray-400 break-all" x-text="getSubconverterUrl()"></p>
+     </div>
+@@ -230,7 +256,8 @@ export const Form = (props) => {
+       <button
+         type="button"
+         x-on:click="copySubconverterUrl()"
+-        class="px-4 py-2 rounded-lg transition-colors font-medium text-sm flex items-center gap-2"
++        x-bind:disabled="!!remoteConfigUrl.trim()"
++        class="px-4 py-2 rounded-lg transition-colors font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+         x-bind:class="subconverterCopied ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+       >
+         <i class="fas" x-bind:class="subconverterCopied ? 'fa-check' : 'fa-copy'"></i>
+@@ -342,7 +369,7 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
        </form>
  
    {/* Results Section */ }
@@ -424,7 +451,7 @@ index 31218b9..d74a5f1 100644
      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-8 transition-all duration-300 hover:shadow-md">
        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
          <h2 class="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-@@ -354,6 +377,11 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
+@@ -354,6 +381,11 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
        </div>
  
        <div class="mt-6 space-y-4">
@@ -436,7 +463,7 @@ index 31218b9..d74a5f1 100644
          {LINK_FIELDS.map((field) => (
            <div class="relative group" key={field.key}>
              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-@@ -361,24 +389,30 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
+@@ -361,24 +393,30 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
              </label>
              <div class="flex gap-2">
                <input
@@ -474,7 +501,7 @@ index 31218b9..d74a5f1 100644
              </div>
            </div>
 diff --git a/src/components/formLogic.js b/src/components/formLogic.js
-index 57f401f..899a7b8 100644
+index 57f401f..3e8e974 100644
 --- a/src/components/formLogic.js
 +++ b/src/components/formLogic.js
 @@ -99,8 +99,17 @@ export const formLogicFn = (t) => {
@@ -515,7 +542,23 @@ index 57f401f..899a7b8 100644
                  this.$watch('includeAutoSelect', val => localStorage.setItem('includeAutoSelect', val));
                  this.$watch('enableClashUI', val => localStorage.setItem('enableClashUI', val));
                  this.$watch('externalController', val => localStorage.setItem('externalController', val));
-@@ -344,14 +359,64 @@ export const formLogicFn = (t) => {
+@@ -194,6 +209,7 @@ export const formLogicFn = (t) => {
+             },
+ 
+             getSubconverterUrl() {
++                if (this.remoteConfigUrl.trim()) return '';
+                 const origin = window.location.origin;
+                 const params = new URLSearchParams();
+ 
+@@ -233,6 +249,7 @@ export const formLogicFn = (t) => {
+ 
+             copySubconverterUrl() {
+                 const url = this.getSubconverterUrl();
++                if (!url) return;
+                 navigator.clipboard.writeText(url).then(() => {
+                     this.subconverterCopied = true;
+                     setTimeout(() => this.subconverterCopied = false, 2000);
+@@ -344,14 +361,64 @@ export const formLogicFn = (t) => {
              clearAll() {
                  if (confirm(window.APP_TRANSLATIONS.confirmClearAll)) {
                      this.input = '';
@@ -582,7 +625,7 @@ index 57f401f..899a7b8 100644
              updateConfigIdInUrl(configId) {
                  const url = new URL(window.location.href);
                  if (configId) {
-@@ -364,8 +429,19 @@ export const formLogicFn = (t) => {
+@@ -364,8 +431,19 @@ export const formLogicFn = (t) => {
  
              async submitForm() {
                  this.loading = true;
@@ -603,7 +646,7 @@ index 57f401f..899a7b8 100644
                      // Get custom rules from the child component via the hidden input
                      const customRulesInput = document.querySelector('input[name="customRules"]');
                      const customRules = customRulesInput && customRulesInput.value ? JSON.parse(customRulesInput.value) : [];
-@@ -392,13 +468,18 @@ export const formLogicFn = (t) => {
+@@ -392,13 +470,18 @@ export const formLogicFn = (t) => {
                      }
  
                      const queryString = params.toString();
@@ -623,7 +666,7 @@ index 57f401f..899a7b8 100644
  
                      // Scroll to results
                      setTimeout(() => {
-@@ -428,6 +509,9 @@ export const formLogicFn = (t) => {
+@@ -428,6 +511,9 @@ export const formLogicFn = (t) => {
                  }
  
                  this.shortening = true;
@@ -633,7 +676,7 @@ index 57f401f..899a7b8 100644
                  try {
                      const origin = window.location.origin;
                      const shortened = {};
-@@ -437,7 +521,8 @@ export const formLogicFn = (t) => {
+@@ -437,7 +523,8 @@ export const formLogicFn = (t) => {
                      let isFirstRequest = true;
  
                      // Shorten each link type
@@ -643,7 +686,7 @@ index 57f401f..899a7b8 100644
                          try {
                              let apiUrl = `${origin}/shorten-v2?url=${encodeURIComponent(url)}`;
  
-@@ -448,6 +533,7 @@ export const formLogicFn = (t) => {
+@@ -448,6 +535,7 @@ export const formLogicFn = (t) => {
                              }
  
                              const response = await fetch(apiUrl);
@@ -651,7 +694,7 @@ index 57f401f..899a7b8 100644
                              if (!response.ok) {
                                  throw new Error(`Failed to shorten ${type} link`);
                              }
-@@ -475,12 +561,13 @@ export const formLogicFn = (t) => {
+@@ -475,12 +563,13 @@ export const formLogicFn = (t) => {
                          }
                      }
  
@@ -667,7 +710,7 @@ index 57f401f..899a7b8 100644
                  }
              },
  
-@@ -536,6 +623,7 @@ export const formLogicFn = (t) => {
+@@ -536,6 +625,7 @@ export const formLogicFn = (t) => {
                  }
  
                  this.parsingUrl = true;
@@ -675,7 +718,7 @@ index 57f401f..899a7b8 100644
                  try {
                      let urlToParse;
  
-@@ -566,6 +654,7 @@ export const formLogicFn = (t) => {
+@@ -566,6 +656,7 @@ export const formLogicFn = (t) => {
                      }
  
                      // Now parse the full URL and populate form
@@ -683,7 +726,7 @@ index 57f401f..899a7b8 100644
                      this.populateFormFromUrl(urlToParse);
  
                      // Show a success message
-@@ -635,6 +724,9 @@ export const formLogicFn = (t) => {
+@@ -635,6 +726,9 @@ export const formLogicFn = (t) => {
                  }
  
                  const ua = params.get('ua');
@@ -693,7 +736,7 @@ index 57f401f..899a7b8 100644
                  if (ua) {
                      this.customUA = ua;
                  }
-@@ -647,7 +739,7 @@ export const formLogicFn = (t) => {
+@@ -647,7 +741,7 @@ export const formLogicFn = (t) => {
  
                  // Expand advanced options if any advanced settings are present
                  if (selectedRules || customRules || this.groupByCountry || this.enableClashUI ||
@@ -703,15 +746,16 @@ index 57f401f..899a7b8 100644
                  }
              }
 diff --git a/src/i18n/index.js b/src/i18n/index.js
-index 84ad13e..20b10bb 100644
+index 84ad13e..b7a5615 100644
 --- a/src/i18n/index.js
 +++ b/src/i18n/index.js
-@@ -29,6 +29,13 @@ export const translations = {
+@@ -29,6 +29,14 @@ export const translations = {
      shareUrls: '输入源',
      urlPlaceholder: '支持粘贴：分享链接、Clash 配置、Sing-Box 配置、Surge 配置...',
      advancedOptions: '高级选项',
 +    clashSubscriptionOptions: 'Clash 订阅设置',
 +    excludeNodes: '排除节点',
++    subconverterRemoteDisabled: '已填写远程配置，Subconverter 外部配置已停用。清空远程配置地址后恢复。',
 +    autoExcludeNodes: '自动选择排除节点',
 +    autoExcludeNodesHelp: '仅从默认自动选择中排除匹配的节点，国家分组仍可选择。多个关键词用 | 分隔，支持正则；留空关闭排除。使用远程配置时以远程分组规则为准。',
 +    excludeNodesHelp: '按节点名称过滤，多个关键词用 | 分隔；支持正则。留空则保留全部节点。',
@@ -720,7 +764,7 @@ index 84ad13e..20b10bb 100644
      baseConfigSettings: '基础配置设置',
      baseConfigTooltip: '在此处自定义您的基础配置',
      saveConfig: '保存配置',
-@@ -144,6 +151,10 @@ export const translations = {
+@@ -144,6 +152,10 @@ export const translations = {
      clashLink: 'Clash 链接',
      surgeLink: 'Surge 链接',
      copied: '已复制！',
@@ -731,12 +775,13 @@ index 84ad13e..20b10bb 100644
      shortening: '正在生成短链接...',
      alreadyShortened: '链接已经是短链接了！',
      shortenFailed: '生成短链接失败，请重试',
-@@ -192,6 +203,13 @@ export const translations = {
+@@ -192,6 +204,14 @@ export const translations = {
      shareUrls: 'Input Source',
      urlPlaceholder: 'Paste share links, Clash config, Sing-Box config, or Surge config...',
      advancedOptions: 'Advanced Options',
 +    clashSubscriptionOptions: 'Clash subscription options',
 +    excludeNodes: 'Exclude nodes',
++    subconverterRemoteDisabled: 'Remote configuration is active. Subconverter external configuration is disabled. Clear the remote address to restore it.',
 +    autoExcludeNodes: 'Exclude nodes from automatic selection',
 +    autoExcludeNodesHelp: 'Exclude matching names only from default automatic selection; country groups keep them. Use | or regular expressions. Leave empty to disable. Remote profiles use their own group rules.',
 +    excludeNodesHelp: 'Filter node names with keywords separated by | or regular expressions. Leave empty to keep all nodes.',
@@ -745,7 +790,7 @@ index 84ad13e..20b10bb 100644
      baseConfigSettings: 'Base Config Settings',
      baseConfigTooltip: 'Customize your base configuration here',
      saveConfig: 'Save Config',
-@@ -306,6 +324,10 @@ export const translations = {
+@@ -306,6 +326,10 @@ export const translations = {
      clashLink: 'Clash Link',
      surgeLink: 'Surge Link',
      copied: 'Copied!',
@@ -756,12 +801,13 @@ index 84ad13e..20b10bb 100644
      shortening: 'Shortening...',
      alreadyShortened: 'Links are already shortened!',
      shortenFailed: 'Failed to shorten URLs. Please try again.',
-@@ -348,6 +370,13 @@ export const translations = {
+@@ -348,6 +372,14 @@ export const translations = {
      shareUrls: 'منبع ورودی',
      urlPlaceholder: 'لینک‌های اشتراک، پیکربندی Clash، Sing-Box یا Surge را جایگذاری کنید...',
      advancedOptions: 'گزینه‌های پیشرفته',
 +    clashSubscriptionOptions: 'تنظیمات اشتراک Clash',
 +    excludeNodes: 'حذف گره‌ها',
++    subconverterRemoteDisabled: 'پیکربندی راه دور فعال است. برای فعال کردن Subconverter آدرس راه دور را پاک کنید.',
 +    autoExcludeNodes: 'حذف از انتخاب خودکار',
 +    autoExcludeNodesHelp: 'فقط انتخاب خودکار پیش‌فرض را فیلتر می‌کند. از | یا عبارت منظم استفاده کنید؛ خالی یعنی غیرفعال. گروه‌های کشور حفظ می‌شوند و تنظیمات راه دور قوانین خود را دارند.',
 +    excludeNodesHelp: 'نام گره‌ها را با کلمات جداشده با | یا عبارت منظم فیلتر کنید. برای حفظ همه گره‌ها خالی بگذارید.',
@@ -770,7 +816,7 @@ index 84ad13e..20b10bb 100644
      baseConfigSettings: 'تنظیمات پیکربندی پایه',
      baseConfigTooltip: 'پیکربندی پایه خود را اینجا سفارشی کنید',
      saveConfig: 'ذخیره پیکربندی',
-@@ -462,6 +491,10 @@ export const translations = {
+@@ -462,6 +494,10 @@ export const translations = {
      clashLink: 'لینک Clash',
      surgeLink: 'لینک Surge',
      copied: 'کپی شد!',
@@ -781,12 +827,13 @@ index 84ad13e..20b10bb 100644
      shortening: 'در حال کوتاه کردن...',
      alreadyShortened: 'لینک‌ها از قبل کوتاه شده‌اند!',
      shortenFailed: 'کوتاه کردن URL ناموفق بود. لطفاً دوباره تلاش کنید.',
-@@ -504,6 +537,13 @@ export const translations = {
+@@ -504,6 +540,14 @@ export const translations = {
      shareUrls: 'Источник ввода',
      urlPlaceholder: 'Вставьте ссылки, конфигурацию Clash, Sing-Box или Surge...',
      advancedOptions: 'Расширенные настройки',
 +    clashSubscriptionOptions: 'Настройки подписки Clash',
 +    excludeNodes: 'Исключить узлы',
++    subconverterRemoteDisabled: 'Удалённая конфигурация активна. Очистите её адрес, чтобы включить внешнюю конфигурацию Subconverter.',
 +    autoExcludeNodes: 'Исключить из автовыбора',
 +    autoExcludeNodesHelp: 'Только для стандартного автовыбора. Используйте | или регулярное выражение; пустое поле отключает фильтр. Группы стран сохраняют узлы, удалённые профили используют свои правила.',
 +    excludeNodesHelp: 'Фильтр имён: ключевые слова через | или регулярные выражения. Оставьте пустым, чтобы сохранить все узлы.',
@@ -795,7 +842,7 @@ index 84ad13e..20b10bb 100644
      baseConfigSettings: 'Базовые настройки конфигурации',
      baseConfigTooltip: 'Настройте базовую конфигурацию здесь',
      saveConfig: 'Сохранить конфигурацию',
-@@ -618,6 +658,10 @@ export const translations = {
+@@ -618,6 +662,10 @@ export const translations = {
      clashLink: 'Ссылка Clash',
      surgeLink: 'Ссылка Surge',
      copied: 'Скопировано!',
@@ -1037,7 +1084,7 @@ index 0000000..20f6dde
 +    return yaml.dump(candidate);
 +}
 diff --git a/test/formLogic.test.js b/test/formLogic.test.js
-index 906549c..acd559c 100644
+index 906549c..4d2d3a1 100644
 --- a/test/formLogic.test.js
 +++ b/test/formLogic.test.js
 @@ -1,7 +1,14 @@
@@ -1056,7 +1103,7 @@ index 906549c..acd559c 100644
    it('includes parseSurgeConfigInput definition in toString output', () => {
      const fnString = formLogicFn.toString();
  
-@@ -32,4 +39,70 @@ describe('formLogic toString fix', () => {
+@@ -32,4 +39,83 @@ describe('formLogic toString fix', () => {
      expect(typeof data.toggleAccordion).toBe('function');
      expect(data.showAdvanced).toBe(false);
    });
@@ -1081,6 +1128,19 @@ index 906549c..acd559c 100644
 +    await data.submitForm();
 +    expect(new URL(data.generatedLinks.clash).searchParams.get('remote_config')).toBe(field.value);
 +    expect(data.generatedRemoteConfigUrl).toBe(field.value);
++  });
++
++  it('disables external configuration while a remote profile is set and restores it on clearing', () => {
++    const writeText=vi.fn();
++    const data=makeData({navigator:{clipboard:{writeText}}});
++    const original=data.getSubconverterUrl();
++    expect(original).toContain('/subconverter');
++    data.remoteConfigUrl='https://example.com/profile.ini';
++    expect(data.getSubconverterUrl()).toBe('');
++    data.copySubconverterUrl();
++    expect(writeText).not.toHaveBeenCalled();
++    data.remoteConfigUrl='';
++    expect(data.getSubconverterUrl()).toBe(original);
 +  });
 +
 +  it('uses the current auto-exclusion field and keeps an explicit empty override', async () => {

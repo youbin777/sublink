@@ -125,17 +125,7 @@ export const Form = (props) => {
   <div x-show="showAdvanced" {...{'x-transition:enter': 'transition ease-out duration-300', 'x-transition:enter-start': 'opacity-0 transform -translate-y-4', 'x-transition:enter-end': 'opacity-100 transform translate-y-0', 'x-transition:leave': 'transition ease-in duration-200', 'x-transition:leave-start': 'opacity-100 transform translate-y-0', 'x-transition:leave-end': 'opacity-0 transform -translate-y-4'}} class="space-y-6">
 
     <section class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-5">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{t('clashSubscriptionOptions')}</h3>
-      <div>
-        <label for="excludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('excludeNodes')}</label>
-        <input id="excludeNodes" name="exclude" type="text" x-model="excludeNodes" maxlength="512" placeholder="超时|官网|异常|重置|剩余|套餐|收藏|邮箱" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
-        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('excludeNodesHelp')}</p>
-      </div>
-      <div>
-        <label for="autoExcludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('autoExcludeNodes')}</label>
-        <input id="autoExcludeNodes" name="auto_exclude" type="text" x-model="autoExcludeNodes" maxlength="512" placeholder="US-LAX|JP-TYO|TW-TPE|KR-INC" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
-        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('autoExcludeNodesHelp')}</p>
-      </div>
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{t('remoteRoutingConfig')}</h3>
       <div>
         <label for="remoteConfigUrl" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('remoteRoutingConfig')}</label>
         <input id="remoteConfigUrl" name="remote_config" type="url" x-model="remoteConfigUrl" list="remote-routing-presets" placeholder="https://example.com/config.ini" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
@@ -191,6 +181,18 @@ export const Form = (props) => {
             </h3>
             
             <div class="space-y-4">
+              <p class="text-sm text-gray-500 dark:text-gray-400">{t('clashSubscriptionOptions')}</p>
+      <div>
+        <label for="excludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('excludeNodes')}</label>
+        <input id="excludeNodes" name="exclude" type="text" x-model="excludeNodes" maxlength="512" placeholder="超时|官网|异常|重置|剩余|套餐|收藏|邮箱" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('excludeNodesHelp')}</p>
+      </div>
+      <div>
+        <label for="autoExcludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('autoExcludeNodes')}</label>
+        <input id="autoExcludeNodes" name="auto_exclude" type="text" x-model="autoExcludeNodes" maxlength="512" placeholder="US-LAX|JP-TYO|TW-TPE|KR-INC" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('autoExcludeNodesHelp')}</p>
+      </div>
+
               <label class="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
                 <span class="font-medium text-gray-700 dark:text-gray-300">{t('groupByCountry')}</span>
                 <div class="relative inline-flex items-center cursor-pointer">
@@ -246,6 +248,7 @@ export const Form = (props) => {
       {t('subconverterConfigTitle')}
     </h3>
     <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{t('subconverterConfigDesc')}</p>
+    <p x-show="remoteConfigUrl.trim()" class="text-sm text-amber-600 dark:text-amber-400 mb-4">{t('subconverterRemoteDisabled')}</p>
     <div class="px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
       <p class="font-mono text-sm text-gray-600 dark:text-gray-400 break-all" x-text="getSubconverterUrl()"></p>
     </div>
@@ -253,7 +256,8 @@ export const Form = (props) => {
       <button
         type="button"
         x-on:click="copySubconverterUrl()"
-        class="px-4 py-2 rounded-lg transition-colors font-medium text-sm flex items-center gap-2"
+        x-bind:disabled="!!remoteConfigUrl.trim()"
+        class="px-4 py-2 rounded-lg transition-colors font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         x-bind:class="subconverterCopied ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
       >
         <i class="fas" x-bind:class="subconverterCopied ? 'fa-check' : 'fa-copy'"></i>
