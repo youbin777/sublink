@@ -50,7 +50,7 @@ describe('formLogic toString fix', () => {
     expect(new URL(data.generatedLinks.clash).searchParams.get('exclude')).toBe('剩余|套餐');
     expect(new URL(data.generatedLinks.clash).searchParams.get('remote_config')).toBe(data.remoteConfigUrl);
     expect(new URL(data.generatedLinks.singbox).searchParams.has('remote_config')).toBe(false);
-    expect(new URL(data.generatedLinks.surge).searchParams.has('exclude')).toBe(false);
+    expect(new URL(data.generatedLinks.surge).searchParams.get('exclude')).toBe('剩余|套餐');
   });
 
   it('uses the current remote address control even before model state catches up', async () => {
@@ -80,7 +80,8 @@ describe('formLogic toString fix', () => {
     const data=makeData({document:{getElementById:id=>id==='autoExcludeNodes'?field:null}});
     await data.submitForm();
     expect(new URL(data.generatedLinks.clash).searchParams.get('auto_exclude')).toBe('HK|JP');
-    expect(new URL(data.generatedLinks.singbox).searchParams.has('auto_exclude')).toBe(false);
+    expect(new URL(data.generatedLinks.singbox).searchParams.get('auto_exclude')).toBe('HK|JP');
+    expect(new URL(data.generatedLinks.xray).searchParams.has('auto_exclude')).toBe(false);
     field.value=''; await data.submitForm();
     const params=new URL(data.generatedLinks.clash).searchParams;
     expect(params.has('auto_exclude')).toBe(true);

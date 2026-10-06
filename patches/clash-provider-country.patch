@@ -43,18 +43,29 @@ index 6345993..908a4bb 100644
    "engines": {
      "node": ">=18"
 diff --git a/src/app/createApp.jsx b/src/app/createApp.jsx
-index 8dbd9e9..21a0b81 100644
+index 8dbd9e9..8573c30 100644
 --- a/src/app/createApp.jsx
 +++ b/src/app/createApp.jsx
-@@ -16,6 +16,7 @@ import { ShortLinkService } from '../services/shortLinkService.js';
+@@ -16,6 +16,9 @@ import { ShortLinkService } from '../services/shortLinkService.js';
  import { ConfigStorageService } from '../services/configStorageService.js';
  import { ServiceError, MissingDependencyError } from '../services/errors.js';
  import { normalizeRuntime } from '../runtime/runtimeConfig.js';
 +import { loadRemoteRouting, applyRemoteRouting } from '../services/remoteConfigService.js';
++import { compileNodePattern } from '../services/nodeFilter.js';
++import { ProxyParser } from '../parsers/index.js';
  import { PREDEFINED_RULE_SETS, SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11, generateSubconverterConfig } from '../config/index.js';
  
  const DEFAULT_USER_AGENT = 'curl/7.74.0';
-@@ -141,6 +142,8 @@ export function createApp(bindings = {}) {
+@@ -113,6 +116,8 @@ export function createApp(bindings = {}) {
+                 singboxConfigVersion,
+                 includeAutoSelect
+             );
++            builder.setNodeExclusion(c.req.query('exclude') || '');
++            builder.setAutoSelectExclusion(c.req.query('auto_exclude') ?? 'US-LAX|JP-TYO|TW-TPE|KR-INC');
+             await builder.build();
+             const userinfo = builder.getSubscriptionUserinfo();
+             if (userinfo) {
+@@ -141,6 +146,8 @@ export function createApp(bindings = {}) {
              const externalUiDownloadUrl = c.req.query('external_ui_download_url');
              const configId = c.req.query('configId');
              const lang = c.get('lang');
@@ -63,7 +74,7 @@ index 8dbd9e9..21a0b81 100644
  
              let baseConfig;
              if (configId) {
-@@ -161,13 +164,19 @@ export function createApp(bindings = {}) {
+@@ -161,13 +168,19 @@ export function createApp(bindings = {}) {
                  externalUiDownloadUrl,
                  includeAutoSelect
              );
@@ -84,7 +95,26 @@ index 8dbd9e9..21a0b81 100644
          } catch (error) {
              return handleError(c, error, runtime.logger);
          }
-@@ -268,6 +277,7 @@ export function createApp(bindings = {}) {
+@@ -205,6 +218,8 @@ export function createApp(bindings = {}) {
+                 includeAutoSelect
+             );
+             builder.setSubscriptionUrl(c.req.url);
++            builder.setNodeExclusion(c.req.query('exclude') || '');
++            builder.setAutoSelectExclusion(c.req.query('auto_exclude') ?? 'US-LAX|JP-TYO|TW-TPE|KR-INC');
+             await builder.build();
+ 
+             const userinfo = builder.getSubscriptionUserinfo();
+@@ -261,6 +276,9 @@ export function createApp(bindings = {}) {
+     });
+ 
+     app.get('/xray', async (c) => {
++        let exclusion;
++        try { exclusion = compileNodePattern(c.req.query('exclude') || ''); }
++        catch (error) { return handleError(c, error, runtime.logger); }
+         const inputString = c.req.query('config');
+         if (!inputString) {
+             return c.text('Missing config parameter', 400);
+@@ -268,6 +286,7 @@ export function createApp(bindings = {}) {
  
          const proxylist = inputString.split('\n');
          const finalProxyList = [];
@@ -92,7 +122,7 @@ index 8dbd9e9..21a0b81 100644
          const userAgent = c.req.query('ua') || getRequestHeader(c.req, 'User-Agent') || DEFAULT_USER_AGENT;
          const headers = { 'User-Agent': userAgent };
  
-@@ -278,6 +288,10 @@ export function createApp(bindings = {}) {
+@@ -278,6 +297,10 @@ export function createApp(bindings = {}) {
              if (trimmedProxy.startsWith('http://') || trimmedProxy.startsWith('https://')) {
                  try {
                      const response = await fetch(trimmedProxy, { method: 'GET', headers });
@@ -103,7 +133,19 @@ index 8dbd9e9..21a0b81 100644
                      const text = await response.text();
                      let processed = tryDecodeSubscriptionLines(text, { decodeUriComponent: true });
                      if (!Array.isArray(processed)) processed = [processed];
-@@ -297,7 +311,11 @@ export function createApp(bindings = {}) {
+@@ -292,12 +315,22 @@ export function createApp(bindings = {}) {
+             }
+         }
+ 
+-        const finalString = finalProxyList.join('\n');
++        const filteredProxyList = [];
++        for (const uri of finalProxyList) {
++            let name;
++            try { name = (await ProxyParser.parse(uri, userAgent))?.tag; } catch (_) {}
++            if (!exclusion?.test(name)) filteredProxyList.push(uri);
++        }
++        const finalString = filteredProxyList.join('\n');
+         if (!finalString) {
              return c.text('Missing config parameter', 400);
          }
  
@@ -117,10 +159,18 @@ index 8dbd9e9..21a0b81 100644
  
      app.get('/shorten-v2', async (c) => {
 diff --git a/src/builders/BaseConfigBuilder.js b/src/builders/BaseConfigBuilder.js
-index 0da4b82..220a0da 100644
+index 0da4b82..5b855f7 100644
 --- a/src/builders/BaseConfigBuilder.js
 +++ b/src/builders/BaseConfigBuilder.js
-@@ -22,6 +22,7 @@ export class BaseConfigBuilder {
+@@ -2,6 +2,7 @@ import { ProxyParser } from '../parsers/index.js';
+ import { createStableProviderName, deepCopy, tryDecodeSubscriptionLines, decodeBase64 } from '../utils.js';
+ import { createTranslator } from '../i18n/index.js';
+ import { generateRules, getOutbounds, PREDEFINED_RULE_SETS } from '../config/index.js';
++import { compileNodePattern } from '../services/nodeFilter.js';
+ 
+ export class BaseConfigBuilder {
+     constructor(inputString, baseConfig, lang, userAgent, groupByCountry = false, includeAutoSelect = true) {
+@@ -22,6 +23,7 @@ export class BaseConfigBuilder {
      async build() {
          const customItems = await this.parseCustomItems();
          this.addCustomItems(customItems);
@@ -128,7 +178,7 @@ index 0da4b82..220a0da 100644
          this.addSelectors();
          return this.formatConfig();
      }
-@@ -102,6 +103,7 @@ export class BaseConfigBuilder {
+@@ -102,6 +104,7 @@ export class BaseConfigBuilder {
                              // If format is compatible with target client, use as provider
                              if (this.isCompatibleProviderFormat(format)) {
                                  this.providerUrls.push(originalUrl);
@@ -136,7 +186,7 @@ index 0da4b82..220a0da 100644
                                  continue;  // Skip parsing, will be used as provider
                              }
  
-@@ -186,6 +188,14 @@ export class BaseConfigBuilder {
+@@ -186,6 +189,29 @@ export class BaseConfigBuilder {
          return false;  // Default: no provider support
      }
  
@@ -145,7 +195,22 @@ index 0da4b82..220a0da 100644
 +    }
 +
 +    filterNodes() {
-+        // Each client controls how its inline nodes and remote providers are filtered.
++        if (!this.nodeExclusion) return;
++        const excluded = new Set(this.getProxies().filter(p => this.nodeExclusion.test(this.getProxyName(p))));
++        if (Array.isArray(this.config.outbounds)) this.config.outbounds = this.config.outbounds.filter(p => !excluded.has(p));
++        if (Array.isArray(this.config.proxies)) this.config.proxies = this.config.proxies.filter(p => !excluded.has(p));
++    }
++
++    setNodeExclusion(pattern) {
++        this.nodeExclusion = compileNodePattern(pattern);
++    }
++
++    setAutoSelectExclusion(pattern) {
++        this.autoSelectExclusion = compileNodePattern(pattern);
++    }
++
++    getAutoSelectCandidates(names) {
++        return names.filter(name => !this.autoSelectExclusion?.test(name));
 +    }
 +
      getAutoProviderDescriptors(reservedNames = []) {
@@ -372,8 +437,49 @@ index fe03684..83ae7f4 100644
                  }
                  this.config['proxy-groups'].push(group);
                  existingNames.add(norm);
+diff --git a/src/builders/SingboxConfigBuilder.js b/src/builders/SingboxConfigBuilder.js
+index 295b964..a777d6b 100644
+--- a/src/builders/SingboxConfigBuilder.js
++++ b/src/builders/SingboxConfigBuilder.js
+@@ -32,6 +32,8 @@ export class SingboxConfigBuilder extends BaseConfigBuilder {
+      * @returns {boolean} - True if format is Sing-Box JSON and version supports providers
+      */
+     isCompatibleProviderFormat(format) {
++        // Materialize filtered subscriptions so each selector gets the correct candidates.
++        if (this.nodeExclusion || this.autoSelectExclusion) return false;
+         // outbound_providers only supported in Sing-Box 1.12+
+         if (this.singboxVersion === '1.11') {
+             return false;
+@@ -153,7 +155,8 @@ export class SingboxConfigBuilder extends BaseConfigBuilder {
+         const tag = this.t('outboundNames.Auto Select');
+         if (this.hasOutboundTag(tag)) return;
+         const providerTags = this.getAllProviderTags();
+-        const autoSelectMembers = deepCopy(uniqueNames(proxyList));
++        const autoSelectMembers = deepCopy(uniqueNames(this.getAutoSelectCandidates(proxyList)));
++        if (autoSelectMembers.length === 0 && proxyList.length > 0) autoSelectMembers.push('REJECT');
+         if (autoSelectMembers.length === 0 && providerTags.length === 0) return;
+ 
+         const group = {
+diff --git a/src/builders/SurgeConfigBuilder.js b/src/builders/SurgeConfigBuilder.js
+index 45315f1..9023b89 100644
+--- a/src/builders/SurgeConfigBuilder.js
++++ b/src/builders/SurgeConfigBuilder.js
+@@ -256,11 +256,12 @@ export class SurgeConfigBuilder extends BaseConfigBuilder {
+         this.config['proxy-groups'] = this.config['proxy-groups'] || [];
+         const name = this.t('outboundNames.Auto Select');
+         if (this.hasProxyGroup(name)) return;
++        const candidates = this.getAutoSelectCandidates(proxyList);
+         this.config['proxy-groups'].push(
+             this.createProxyGroup(
+                 name,
+                 'url-test',
+-                this.sanitizeOptions(proxyList),
++                this.sanitizeOptions(candidates.length ? candidates : ['REJECT']),
+                 ', url=http://www.gstatic.com/generate_204, interval=300'
+             )
+         );
 diff --git a/src/components/Form.jsx b/src/components/Form.jsx
-index 31218b9..4e17dba 100644
+index 31218b9..7b9ca39 100644
 --- a/src/components/Form.jsx
 +++ b/src/components/Form.jsx
 @@ -34,7 +34,8 @@ export const Form = (props) => {
@@ -386,30 +492,20 @@ index 31218b9..4e17dba 100644
    };
  
    const scriptContent = `
-@@ -123,6 +124,18 @@ export const Form = (props) => {
+@@ -123,6 +124,8 @@ export const Form = (props) => {
    {/* Advanced Options Content */ }
    <div x-show="showAdvanced" {...{'x-transition:enter': 'transition ease-out duration-300', 'x-transition:enter-start': 'opacity-0 transform -translate-y-4', 'x-transition:enter-end': 'opacity-100 transform translate-y-0', 'x-transition:leave': 'transition ease-in duration-200', 'x-transition:leave-start': 'opacity-100 transform translate-y-0', 'x-transition:leave-end': 'opacity-0 transform -translate-y-4'}} class="space-y-6">
  
-+    <section class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-5">
-+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{t('remoteRoutingConfig')}</h3>
-+      <div>
-+        <label for="remoteConfigUrl" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('remoteRoutingConfig')}</label>
-+        <input id="remoteConfigUrl" name="remote_config" type="url" x-model="remoteConfigUrl" list="remote-routing-presets" placeholder="https://example.com/config.ini" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
-+        <datalist id="remote-routing-presets">
-+          <option value="https://raw.githubusercontent.com/youbin777/clash/refs/heads/main/ACL4SSR_Online_Full_MultiMode.ini">ACL4SSR MultiMode</option>
-+        </datalist>
-+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('remoteRoutingHelp')}</p>
-+      </div>
-+    </section>
++
 +
      {/* Rule Selection */ }
      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
        <div class="flex items-center justify-between mb-4">
-@@ -168,6 +181,18 @@ export const Form = (props) => {
+@@ -168,6 +171,18 @@ export const Form = (props) => {
              </h3>
              
              <div class="space-y-4">
-+              <p class="text-sm text-gray-500 dark:text-gray-400">{t('clashSubscriptionOptions')}</p>
++              <p class="text-sm text-gray-500 dark:text-gray-400">{t('nodeFilterScope')}</p>
 +      <div>
 +        <label for="excludeNodes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('excludeNodes')}</label>
 +        <input id="excludeNodes" name="exclude" type="text" x-model="excludeNodes" maxlength="512" placeholder="超时|官网|异常|重置|剩余|套餐|收藏|邮箱" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
@@ -424,9 +520,23 @@ index 31218b9..4e17dba 100644
                <label class="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
                  <span class="font-medium text-gray-700 dark:text-gray-300">{t('groupByCountry')}</span>
                  <div class="relative inline-flex items-center cursor-pointer">
-@@ -223,6 +248,7 @@ export const Form = (props) => {
-       {t('subconverterConfigTitle')}
+@@ -220,9 +235,20 @@ export const Form = (props) => {
+   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+     <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-2">
+       <i class="fas fa-file-export text-gray-400"></i>
+-      {t('subconverterConfigTitle')}
++      {t('configSourceTitle')}
      </h3>
++          <div>
++        <label for="remoteConfigUrl" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('remoteRoutingConfig')}</label>
++        <input id="remoteConfigUrl" name="remote_config" type="url" x-model="remoteConfigUrl" list="remote-routing-presets" placeholder="https://example.com/config.ini" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
++        <datalist id="remote-routing-presets">
++          <option value="https://raw.githubusercontent.com/youbin777/clash/refs/heads/main/ACL4SSR_Online_Full_MultiMode.ini">ACL4SSR MultiMode</option>
++        </datalist>
++        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('remoteRoutingHelp')}</p>
++      </div>
++    
++    <h4 class="text-base font-semibold text-gray-900 dark:text-white mt-6 mb-3">{t('subconverterConfigTitle')}</h4>
      <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{t('subconverterConfigDesc')}</p>
 +    <p x-show="remoteConfigUrl.trim()" class="text-sm text-amber-600 dark:text-amber-400 mb-4">{t('subconverterRemoteDisabled')}</p>
      <div class="px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -501,7 +611,7 @@ index 31218b9..4e17dba 100644
              </div>
            </div>
 diff --git a/src/components/formLogic.js b/src/components/formLogic.js
-index 57f401f..3e8e974 100644
+index 57f401f..f15403d 100644
 --- a/src/components/formLogic.js
 +++ b/src/components/formLogic.js
 @@ -99,8 +99,17 @@ export const formLogicFn = (t) => {
@@ -646,9 +756,14 @@ index 57f401f..3e8e974 100644
                      // Get custom rules from the child component via the hidden input
                      const customRulesInput = document.querySelector('input[name="customRules"]');
                      const customRules = customRulesInput && customRulesInput.value ? JSON.parse(customRulesInput.value) : [];
-@@ -392,13 +470,18 @@ export const formLogicFn = (t) => {
+@@ -391,14 +469,23 @@ export const formLogicFn = (t) => {
+                         params.append('configId', configId);
                      }
  
++                    if (this.excludeNodes.trim()) params.set('exclude', this.excludeNodes.trim());
++                    params.set('auto_exclude', this.autoExcludeNodes.trim());
++                    const xrayParams = new URLSearchParams(params);
++                    xrayParams.delete('auto_exclude');
                      const queryString = params.toString();
 +                    const clashParams = new URLSearchParams(params);
 +                    if (this.excludeNodes.trim()) clashParams.set('exclude', this.excludeNodes.trim());
@@ -656,7 +771,8 @@ index 57f401f..3e8e974 100644
 +                    if (this.remoteConfigUrl.trim()) clashParams.set('remote_config', this.remoteConfigUrl.trim());
  
                      this.generatedLinks = {
-                         xray: origin + '/xray?' + queryString,
+-                        xray: origin + '/xray?' + queryString,
++                        xray: origin + '/xray?' + xrayParams.toString(),
                          singbox: origin + '/singbox?' + queryString,
 -                        clash: origin + '/clash?' + queryString,
 +                        clash: origin + '/clash?' + clashParams.toString(),
@@ -666,7 +782,7 @@ index 57f401f..3e8e974 100644
  
                      // Scroll to results
                      setTimeout(() => {
-@@ -428,6 +511,9 @@ export const formLogicFn = (t) => {
+@@ -428,6 +515,9 @@ export const formLogicFn = (t) => {
                  }
  
                  this.shortening = true;
@@ -676,7 +792,7 @@ index 57f401f..3e8e974 100644
                  try {
                      const origin = window.location.origin;
                      const shortened = {};
-@@ -437,7 +523,8 @@ export const formLogicFn = (t) => {
+@@ -437,7 +527,8 @@ export const formLogicFn = (t) => {
                      let isFirstRequest = true;
  
                      // Shorten each link type
@@ -686,7 +802,7 @@ index 57f401f..3e8e974 100644
                          try {
                              let apiUrl = `${origin}/shorten-v2?url=${encodeURIComponent(url)}`;
  
-@@ -448,6 +535,7 @@ export const formLogicFn = (t) => {
+@@ -448,6 +539,7 @@ export const formLogicFn = (t) => {
                              }
  
                              const response = await fetch(apiUrl);
@@ -694,7 +810,7 @@ index 57f401f..3e8e974 100644
                              if (!response.ok) {
                                  throw new Error(`Failed to shorten ${type} link`);
                              }
-@@ -475,12 +563,13 @@ export const formLogicFn = (t) => {
+@@ -475,12 +567,13 @@ export const formLogicFn = (t) => {
                          }
                      }
  
@@ -710,7 +826,7 @@ index 57f401f..3e8e974 100644
                  }
              },
  
-@@ -536,6 +625,7 @@ export const formLogicFn = (t) => {
+@@ -536,6 +629,7 @@ export const formLogicFn = (t) => {
                  }
  
                  this.parsingUrl = true;
@@ -718,7 +834,7 @@ index 57f401f..3e8e974 100644
                  try {
                      let urlToParse;
  
-@@ -566,6 +656,7 @@ export const formLogicFn = (t) => {
+@@ -566,6 +660,7 @@ export const formLogicFn = (t) => {
                      }
  
                      // Now parse the full URL and populate form
@@ -726,7 +842,7 @@ index 57f401f..3e8e974 100644
                      this.populateFormFromUrl(urlToParse);
  
                      // Show a success message
-@@ -635,6 +726,9 @@ export const formLogicFn = (t) => {
+@@ -635,6 +730,9 @@ export const formLogicFn = (t) => {
                  }
  
                  const ua = params.get('ua');
@@ -736,7 +852,7 @@ index 57f401f..3e8e974 100644
                  if (ua) {
                      this.customUA = ua;
                  }
-@@ -647,7 +741,7 @@ export const formLogicFn = (t) => {
+@@ -647,7 +745,7 @@ export const formLogicFn = (t) => {
  
                  // Expand advanced options if any advanced settings are present
                  if (selectedRules || customRules || this.groupByCountry || this.enableClashUI ||
@@ -746,25 +862,27 @@ index 57f401f..3e8e974 100644
                  }
              }
 diff --git a/src/i18n/index.js b/src/i18n/index.js
-index 84ad13e..b7a5615 100644
+index 84ad13e..d7b91e1 100644
 --- a/src/i18n/index.js
 +++ b/src/i18n/index.js
-@@ -29,6 +29,14 @@ export const translations = {
+@@ -29,6 +29,16 @@ export const translations = {
      shareUrls: '输入源',
      urlPlaceholder: '支持粘贴：分享链接、Clash 配置、Sing-Box 配置、Surge 配置...',
      advancedOptions: '高级选项',
 +    clashSubscriptionOptions: 'Clash 订阅设置',
 +    excludeNodes: '排除节点',
++    configSourceTitle: '配置来源',
++    nodeFilterScope: '排除节点适用于 Xray、SingBox、Clash、Surge；自动选择排除适用于 SingBox、Clash、Surge，Xray 节点列表没有自动选择分组。',
 +    subconverterRemoteDisabled: '已填写远程配置，Subconverter 外部配置已停用。清空远程配置地址后恢复。',
 +    autoExcludeNodes: '自动选择排除节点',
-+    autoExcludeNodesHelp: '仅从默认自动选择中排除匹配的节点，国家分组仍可选择。多个关键词用 | 分隔，支持正则；留空关闭排除。使用远程配置时以远程分组规则为准。',
++    autoExcludeNodesHelp: '从 SingBox、Clash、Surge 的默认自动选择中排除匹配的节点，手动与国家分组仍可选择。多个关键词用 | 分隔，支持正则；留空关闭排除。使用远程配置时以远程分组规则为准。',
 +    excludeNodesHelp: '按节点名称过滤，多个关键词用 | 分隔；支持正则。留空则保留全部节点。',
 +    remoteRoutingConfig: '远程配置（可选）',
 +    remoteRoutingHelp: '支持 HTTPS 地址的 ACL4SSR .ini 和 Clash YAML。启用后使用远程规则与策略组，节点仍来自上方订阅；页面规则选择仅用于其他格式。',
      baseConfigSettings: '基础配置设置',
      baseConfigTooltip: '在此处自定义您的基础配置',
      saveConfig: '保存配置',
-@@ -144,6 +152,10 @@ export const translations = {
+@@ -144,6 +154,10 @@ export const translations = {
      clashLink: 'Clash 链接',
      surgeLink: 'Surge 链接',
      copied: '已复制！',
@@ -775,12 +893,14 @@ index 84ad13e..b7a5615 100644
      shortening: '正在生成短链接...',
      alreadyShortened: '链接已经是短链接了！',
      shortenFailed: '生成短链接失败，请重试',
-@@ -192,6 +204,14 @@ export const translations = {
+@@ -192,6 +206,16 @@ export const translations = {
      shareUrls: 'Input Source',
      urlPlaceholder: 'Paste share links, Clash config, Sing-Box config, or Surge config...',
      advancedOptions: 'Advanced Options',
 +    clashSubscriptionOptions: 'Clash subscription options',
 +    excludeNodes: 'Exclude nodes',
++    configSourceTitle: 'Configuration source',
++    nodeFilterScope: 'Node exclusion applies to Xray, SingBox, Clash and Surge. Automatic selection exclusion applies to SingBox, Clash and Surge; Xray lists have no automatic group.',
 +    subconverterRemoteDisabled: 'Remote configuration is active. Subconverter external configuration is disabled. Clear the remote address to restore it.',
 +    autoExcludeNodes: 'Exclude nodes from automatic selection',
 +    autoExcludeNodesHelp: 'Exclude matching names only from default automatic selection; country groups keep them. Use | or regular expressions. Leave empty to disable. Remote profiles use their own group rules.',
@@ -790,7 +910,7 @@ index 84ad13e..b7a5615 100644
      baseConfigSettings: 'Base Config Settings',
      baseConfigTooltip: 'Customize your base configuration here',
      saveConfig: 'Save Config',
-@@ -306,6 +326,10 @@ export const translations = {
+@@ -306,6 +330,10 @@ export const translations = {
      clashLink: 'Clash Link',
      surgeLink: 'Surge Link',
      copied: 'Copied!',
@@ -801,12 +921,14 @@ index 84ad13e..b7a5615 100644
      shortening: 'Shortening...',
      alreadyShortened: 'Links are already shortened!',
      shortenFailed: 'Failed to shorten URLs. Please try again.',
-@@ -348,6 +372,14 @@ export const translations = {
+@@ -348,6 +376,16 @@ export const translations = {
      shareUrls: 'منبع ورودی',
      urlPlaceholder: 'لینک‌های اشتراک، پیکربندی Clash، Sing-Box یا Surge را جایگذاری کنید...',
      advancedOptions: 'گزینه‌های پیشرفته',
 +    clashSubscriptionOptions: 'تنظیمات اشتراک Clash',
 +    excludeNodes: 'حذف گره‌ها',
++    configSourceTitle: 'منبع پیکربندی',
++    nodeFilterScope: 'حذف گره در هر چهار قالب فعال است. حذف از انتخاب خودکار در SingBox، Clash و Surge فعال است؛ Xray گروه خودکار ندارد.',
 +    subconverterRemoteDisabled: 'پیکربندی راه دور فعال است. برای فعال کردن Subconverter آدرس راه دور را پاک کنید.',
 +    autoExcludeNodes: 'حذف از انتخاب خودکار',
 +    autoExcludeNodesHelp: 'فقط انتخاب خودکار پیش‌فرض را فیلتر می‌کند. از | یا عبارت منظم استفاده کنید؛ خالی یعنی غیرفعال. گروه‌های کشور حفظ می‌شوند و تنظیمات راه دور قوانین خود را دارند.',
@@ -816,7 +938,7 @@ index 84ad13e..b7a5615 100644
      baseConfigSettings: 'تنظیمات پیکربندی پایه',
      baseConfigTooltip: 'پیکربندی پایه خود را اینجا سفارشی کنید',
      saveConfig: 'ذخیره پیکربندی',
-@@ -462,6 +494,10 @@ export const translations = {
+@@ -462,6 +500,10 @@ export const translations = {
      clashLink: 'لینک Clash',
      surgeLink: 'لینک Surge',
      copied: 'کپی شد!',
@@ -827,12 +949,14 @@ index 84ad13e..b7a5615 100644
      shortening: 'در حال کوتاه کردن...',
      alreadyShortened: 'لینک‌ها از قبل کوتاه شده‌اند!',
      shortenFailed: 'کوتاه کردن URL ناموفق بود. لطفاً دوباره تلاش کنید.',
-@@ -504,6 +540,14 @@ export const translations = {
+@@ -504,6 +546,16 @@ export const translations = {
      shareUrls: 'Источник ввода',
      urlPlaceholder: 'Вставьте ссылки, конфигурацию Clash, Sing-Box или Surge...',
      advancedOptions: 'Расширенные настройки',
 +    clashSubscriptionOptions: 'Настройки подписки Clash',
 +    excludeNodes: 'Исключить узлы',
++    configSourceTitle: 'Источник конфигурации',
++    nodeFilterScope: 'Исключение узлов действует во всех четырёх форматах. Фильтр автовыбора — в SingBox, Clash и Surge; у списка Xray нет автоматической группы.',
 +    subconverterRemoteDisabled: 'Удалённая конфигурация активна. Очистите её адрес, чтобы включить внешнюю конфигурацию Subconverter.',
 +    autoExcludeNodes: 'Исключить из автовыбора',
 +    autoExcludeNodesHelp: 'Только для стандартного автовыбора. Используйте | или регулярное выражение; пустое поле отключает фильтр. Группы стран сохраняют узлы, удалённые профили используют свои правила.',
@@ -842,7 +966,7 @@ index 84ad13e..b7a5615 100644
      baseConfigSettings: 'Базовые настройки конфигурации',
      baseConfigTooltip: 'Настройте базовую конфигурацию здесь',
      saveConfig: 'Сохранить конфигурацию',
-@@ -618,6 +662,10 @@ export const translations = {
+@@ -618,6 +670,10 @@ export const translations = {
      clashLink: 'Ссылка Clash',
      surgeLink: 'Ссылка Surge',
      copied: 'Скопировано!',
@@ -1083,8 +1207,76 @@ index 0000000..20f6dde
 +    builder.config = candidate;
 +    return yaml.dump(candidate);
 +}
+diff --git a/test/cross-format-exclusion.test.js b/test/cross-format-exclusion.test.js
+new file mode 100644
+index 0000000..43fd23a
+--- /dev/null
++++ b/test/cross-format-exclusion.test.js
+@@ -0,0 +1,62 @@
++import { describe, it, expect } from 'vitest';
++import yaml from 'js-yaml';
++import { createApp } from '../src/app/createApp.jsx';
++
++const source = ['US-LAX-01', 'JP-剩余流量', 'SG-Node'].map((name, index) =>
++    `ss://YWVzLTI1Ni1nY206dGVzdA==@host${index}.example.com:8388#${encodeURIComponent(name)}`).join('\n');
++const app = createApp({ logger: { error: () => {}, warn: () => {} } });
++describe('Cross-format exclusions', () => {
++    for (const format of ['singbox', 'surge']) {
++        it(`does not restore excluded auto candidates or fall back to direct in ${format}`, async () => {
++            const params = new URLSearchParams({ config: source, auto_exclude: '.*' });
++            const response = await app.request(`/${format}?${params}`);
++            expect(response.status).toBe(200);
++            const text = await response.text();
++            if (format === 'singbox') {
++                const config = JSON.parse(text);
++                expect(config.outbounds.find(o => o.type === 'urltest').outbounds).toEqual(['REJECT']);
++                expect(config.outbounds.some(o => o.tag === 'SG-Node')).toBe(true);
++            } else {
++                const auto = text.split('\n').find(line => line.startsWith('⚡ 自动选择 ='));
++                expect(auto).toContain('REJECT');
++                expect(auto).not.toContain('SG-Node');
++                expect(auto).not.toContain('DIRECT');
++            }
++        });
++    }
++    for (const format of ['xray', 'singbox', 'clash', 'surge']) {
++        it(`filters node names in ${format} and keeps auto-excluded nodes for manual use`, async () => {
++            const params = new URLSearchParams({ config: source, exclude: '剩余', auto_exclude: 'US-LAX' });
++            const response = await app.request(`/${format}?${params}`);
++            expect(response.status).toBe(200);
++            const text = await response.text();
++            if (format === 'xray') {
++                const decoded = atob(text);
++                expect(decoded).not.toContain(encodeURIComponent('JP-剩余流量'));
++                expect(decoded).toContain('US-LAX-01');
++                expect(decoded).toContain('SG-Node');
++            } else if (format === 'singbox') {
++                const config = JSON.parse(text);
++                const auto = config.outbounds.find(o => o.type === 'urltest' && o.tag.includes('自动选择'));
++                expect(config.outbounds.some(o => o.tag === 'JP-剩余流量')).toBe(false);
++                expect(config.outbounds.some(o => o.tag === 'US-LAX-01')).toBe(true);
++                expect(auto.outbounds).toEqual(['SG-Node']);
++            } else if (format === 'surge') {
++                expect(text).not.toContain('JP-剩余流量');
++                expect(text).toContain('US-LAX-01 =');
++                const auto = text.split('\n').find(line => line.startsWith('⚡ 自动选择 ='));
++                expect(auto).toContain('SG-Node');
++                expect(auto).not.toContain('US-LAX');
++            } else {
++                const config = yaml.load(text);
++                expect(config.proxies.some(o => o.name === 'JP-剩余流量')).toBe(false);
++                expect(config.proxies.some(o => o.name === 'US-LAX-01')).toBe(true);
++                expect(config['proxy-groups'].find(o => o.name.includes('自动选择'))['exclude-filter']).toBe('US-LAX');
++            }
++        });
++        it(`rejects malformed node filters in ${format}`, async () => {
++            const response = await app.request(`/${format}?config=${encodeURIComponent(source)}&exclude=%5B`);
++            expect(response.status).toBe(400);
++        });
++    }
++});
 diff --git a/test/formLogic.test.js b/test/formLogic.test.js
-index 906549c..4d2d3a1 100644
+index 906549c..8fe0d30 100644
 --- a/test/formLogic.test.js
 +++ b/test/formLogic.test.js
 @@ -1,7 +1,14 @@
@@ -1103,7 +1295,7 @@ index 906549c..4d2d3a1 100644
    it('includes parseSurgeConfigInput definition in toString output', () => {
      const fnString = formLogicFn.toString();
  
-@@ -32,4 +39,83 @@ describe('formLogic toString fix', () => {
+@@ -32,4 +39,84 @@ describe('formLogic toString fix', () => {
      expect(typeof data.toggleAccordion).toBe('function');
      expect(data.showAdvanced).toBe(false);
    });
@@ -1118,7 +1310,7 @@ index 906549c..4d2d3a1 100644
 +    expect(new URL(data.generatedLinks.clash).searchParams.get('exclude')).toBe('剩余|套餐');
 +    expect(new URL(data.generatedLinks.clash).searchParams.get('remote_config')).toBe(data.remoteConfigUrl);
 +    expect(new URL(data.generatedLinks.singbox).searchParams.has('remote_config')).toBe(false);
-+    expect(new URL(data.generatedLinks.surge).searchParams.has('exclude')).toBe(false);
++    expect(new URL(data.generatedLinks.surge).searchParams.get('exclude')).toBe('剩余|套餐');
 +  });
 +
 +  it('uses the current remote address control even before model state catches up', async () => {
@@ -1148,7 +1340,8 @@ index 906549c..4d2d3a1 100644
 +    const data=makeData({document:{getElementById:id=>id==='autoExcludeNodes'?field:null}});
 +    await data.submitForm();
 +    expect(new URL(data.generatedLinks.clash).searchParams.get('auto_exclude')).toBe('HK|JP');
-+    expect(new URL(data.generatedLinks.singbox).searchParams.has('auto_exclude')).toBe(false);
++    expect(new URL(data.generatedLinks.singbox).searchParams.get('auto_exclude')).toBe('HK|JP');
++    expect(new URL(data.generatedLinks.xray).searchParams.has('auto_exclude')).toBe(false);
 +    field.value=''; await data.submitForm();
 +    const params=new URL(data.generatedLinks.clash).searchParams;
 +    expect(params.has('auto_exclude')).toBe(true);

@@ -2,6 +2,7 @@ import { ProxyParser } from '../parsers/index.js';
 import { createStableProviderName, deepCopy, tryDecodeSubscriptionLines, decodeBase64 } from '../utils.js';
 import { createTranslator } from '../i18n/index.js';
 import { generateRules, getOutbounds, PREDEFINED_RULE_SETS } from '../config/index.js';
+import { compileNodePattern } from '../services/nodeFilter.js';
 
 export class BaseConfigBuilder {
     constructor(inputString, baseConfig, lang, userAgent, groupByCountry = false, includeAutoSelect = true) {
@@ -193,7 +194,22 @@ export class BaseConfigBuilder {
     }
 
     filterNodes() {
-        // Each client controls how its inline nodes and remote providers are filtered.
+        if (!this.nodeExclusion) return;
+        const excluded = new Set(this.getProxies().filter(p => this.nodeExclusion.test(this.getProxyName(p))));
+        if (Array.isArray(this.config.outbounds)) this.config.outbounds = this.config.outbounds.filter(p => !excluded.has(p));
+        if (Array.isArray(this.config.proxies)) this.config.proxies = this.config.proxies.filter(p => !excluded.has(p));
+    }
+
+    setNodeExclusion(pattern) {
+        this.nodeExclusion = compileNodePattern(pattern);
+    }
+
+    setAutoSelectExclusion(pattern) {
+        this.autoSelectExclusion = compileNodePattern(pattern);
+    }
+
+    getAutoSelectCandidates(names) {
+        return names.filter(name => !this.autoSelectExclusion?.test(name));
     }
 
     getAutoProviderDescriptors(reservedNames = []) {

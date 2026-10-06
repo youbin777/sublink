@@ -17,6 +17,8 @@ import { ConfigStorageService } from '../services/configStorageService.js';
 import { ServiceError, MissingDependencyError } from '../services/errors.js';
 import { normalizeRuntime } from '../runtime/runtimeConfig.js';
 import { loadRemoteRouting, applyRemoteRouting } from '../services/remoteConfigService.js';
+import { compileNodePattern } from '../services/nodeFilter.js';
+import { ProxyParser } from '../parsers/index.js';
 import { PREDEFINED_RULE_SETS, SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11, generateSubconverterConfig } from '../config/index.js';
 
 const DEFAULT_USER_AGENT = 'curl/7.74.0';
@@ -114,6 +116,8 @@ export function createApp(bindings = {}) {
                 singboxConfigVersion,
                 includeAutoSelect
             );
+            builder.setNodeExclusion(c.req.query('exclude') || '');
+            builder.setAutoSelectExclusion(c.req.query('auto_exclude') ?? 'US-LAX|JP-TYO|TW-TPE|KR-INC');
             await builder.build();
             const userinfo = builder.getSubscriptionUserinfo();
             if (userinfo) {
@@ -214,6 +218,8 @@ export function createApp(bindings = {}) {
                 includeAutoSelect
             );
             builder.setSubscriptionUrl(c.req.url);
+            builder.setNodeExclusion(c.req.query('exclude') || '');
+            builder.setAutoSelectExclusion(c.req.query('auto_exclude') ?? 'US-LAX|JP-TYO|TW-TPE|KR-INC');
             await builder.build();
 
             const userinfo = builder.getSubscriptionUserinfo();
@@ -270,6 +276,9 @@ export function createApp(bindings = {}) {
     });
 
     app.get('/xray', async (c) => {
+        let exclusion;
+        try { exclusion = compileNodePattern(c.req.query('exclude') || ''); }
+        catch (error) { return handleError(c, error, runtime.logger); }
         const inputString = c.req.query('config');
         if (!inputString) {
             return c.text('Missing config parameter', 400);
@@ -306,7 +315,13 @@ export function createApp(bindings = {}) {
             }
         }
 
-        const finalString = finalProxyList.join('\n');
+        const filteredProxyList = [];
+        for (const uri of finalProxyList) {
+            let name;
+            try { name = (await ProxyParser.parse(uri, userAgent))?.tag; } catch (_) {}
+            if (!exclusion?.test(name)) filteredProxyList.push(uri);
+        }
+        const finalString = filteredProxyList.join('\n');
         if (!finalString) {
             return c.text('Missing config parameter', 400);
         }

@@ -256,11 +256,12 @@ export class SurgeConfigBuilder extends BaseConfigBuilder {
         this.config['proxy-groups'] = this.config['proxy-groups'] || [];
         const name = this.t('outboundNames.Auto Select');
         if (this.hasProxyGroup(name)) return;
+        const candidates = this.getAutoSelectCandidates(proxyList);
         this.config['proxy-groups'].push(
             this.createProxyGroup(
                 name,
                 'url-test',
-                this.sanitizeOptions(proxyList),
+                this.sanitizeOptions(candidates.length ? candidates : ['REJECT']),
                 ', url=http://www.gstatic.com/generate_204, interval=300'
             )
         );

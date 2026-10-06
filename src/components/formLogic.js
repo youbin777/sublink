@@ -469,6 +469,10 @@ export const formLogicFn = (t) => {
                         params.append('configId', configId);
                     }
 
+                    if (this.excludeNodes.trim()) params.set('exclude', this.excludeNodes.trim());
+                    params.set('auto_exclude', this.autoExcludeNodes.trim());
+                    const xrayParams = new URLSearchParams(params);
+                    xrayParams.delete('auto_exclude');
                     const queryString = params.toString();
                     const clashParams = new URLSearchParams(params);
                     if (this.excludeNodes.trim()) clashParams.set('exclude', this.excludeNodes.trim());
@@ -476,7 +480,7 @@ export const formLogicFn = (t) => {
                     if (this.remoteConfigUrl.trim()) clashParams.set('remote_config', this.remoteConfigUrl.trim());
 
                     this.generatedLinks = {
-                        xray: origin + '/xray?' + queryString,
+                        xray: origin + '/xray?' + xrayParams.toString(),
                         singbox: origin + '/singbox?' + queryString,
                         clash: origin + '/clash?' + clashParams.toString(),
                         surge: origin + '/surge?' + queryString
