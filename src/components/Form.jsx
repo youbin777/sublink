@@ -238,7 +238,7 @@ export const Form = (props) => {
       {t('configSourceTitle')}
     </h3>
           <div>
-        <label for="remoteConfigUrl" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('remoteRoutingConfig')}</label>
+        <label for="remoteConfigUrl" class="block text-base font-semibold text-gray-900 dark:text-white mb-3">{t('remoteRoutingConfig')}</label>
         <input id="remoteConfigUrl" name="remote_config" type="url" x-model="remoteConfigUrl" list="remote-routing-presets" placeholder="https://example.com/config.ini" class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
         <datalist id="remote-routing-presets">
           <option value="https://raw.githubusercontent.com/youbin777/clash/refs/heads/main/ACL4SSR_Online_Full_MultiMode.ini">ACL4SSR MultiMode</option>
