@@ -47,6 +47,25 @@ describe('Auto Proxy Providers Detection', () => {
     });
 
     describe('Clash Builder', () => {
+        it('excludes selected routes only from default automatic selection', async () => {
+            fetchSubscriptionWithFormat.mockResolvedValue({
+                content: mockClashYaml.replace('HK-Node', 'TW-TPE-DC07-001[UDP]'),
+                format: 'clash', url: 'https://example.com/clash-sub'
+            });
+            const builder = new ClashConfigBuilder('https://example.com/clash-sub', [], [], null, 'zh-CN', 'test-agent', true);
+            const config = yaml.load(await builder.build());
+            const auto = config['proxy-groups'].find(g => g.name === '⚡ 自动选择');
+            const exclusion = new RegExp(auto['exclude-filter']);
+            for (const name of ['US-LAX-01', 'JP-TYO-01', 'TW-TPE-DC07-001[UDP]', 'KR-INC-01']) {
+                expect(exclusion.test(name)).toBe(true);
+            }
+            expect(exclusion.test('新加坡高速 04| BGP')).toBe(false);
+            expect(Object.values(config['proxy-providers'])[0]['exclude-filter']).toBeUndefined();
+            const taiwan = config['proxy-groups'].find(g => g.name === '🇹🇼 Taiwan');
+            expect(new RegExp(taiwan.filter).test('TW-TPE-DC07-001[UDP]')).toBe(true);
+            expect(taiwan['exclude-filter']).toBeUndefined();
+        });
+
         it('creates filtered country groups for provider-only subscriptions', async () => {
             fetchSubscriptionWithFormat.mockResolvedValue({
                 content: mockClashYaml,

@@ -382,6 +382,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
         const group = {
             name: autoName,
             type: 'url-test',
+            'exclude-filter': 'US-LAX|JP-TYO|TW-TPE|KR-INC',
             proxies: deepCopy(uniqueNames(proxyList)),
             url: 'https://www.gstatic.com/generate_204',
             interval: 300,
