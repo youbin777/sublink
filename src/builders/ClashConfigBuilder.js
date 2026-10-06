@@ -376,6 +376,34 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
         return this.includeAutoSelect && this.hasSelectableSources(proxyList);
     }
 
+    addManualSwitchGroup() {
+        const proxies = uniqueNames(this.getProxyList());
+        const providers = this.getAllProviderNames();
+        if (!proxies.length && !providers.length) return;
+        this.manualGroupName = this.t('outboundNames.Manual Switch');
+        if (this.hasProxyGroup(this.manualGroupName)) return;
+        this.config['proxy-groups'] ||= [];
+        this.config['proxy-groups'].push({
+            name: this.manualGroupName,
+            type: 'select',
+            proxies,
+            ...(providers.length ? { use: providers } : {})
+        });
+    }
+
+    addSelectors() {
+        this.addManualSwitchGroup();
+        super.addSelectors();
+        if (!this.manualGroupName) return;
+        const policyNames = [this.t('outboundNames.Node Select'), this.t('outboundNames.Auto Select')];
+        for (const group of this.config['proxy-groups'] || []) {
+            if (group.type !== 'select' || group.name === this.manualGroupName) continue;
+            if (group.name === policyNames[0] || group.proxies?.some(name => policyNames.includes(name))) {
+                group.proxies = uniqueNames([...(group.proxies || []), this.manualGroupName]);
+            }
+        }
+    }
+
     addAutoSelectGroup(proxyList) {
         if (!this.includeAutoSelect) return;
         this.config['proxy-groups'] = this.config['proxy-groups'] || [];
@@ -521,24 +549,8 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
 
         const existingNames = new Set((this.config['proxy-groups'] || []).map(g => normalizeGroupName(g?.name)).filter(Boolean));
 
-        const manualProxyNames = proxies.map(p => p?.name).filter(Boolean);
-        const manualGroupName = manualProxyNames.length > 0 ? this.t('outboundNames.Manual Switch') : null;
-        if (manualGroupName) {
-            const manualNorm = normalizeGroupName(manualGroupName);
-            if (!existingNames.has(manualNorm)) {
-                const group = {
-                    name: manualGroupName,
-                    type: 'select',
-                    proxies: manualProxyNames
-                };
-                const providerNames = this.getAllProviderNames();
-                if (providerNames.length > 0) {
-                    group.use = providerNames;
-                }
-                this.config['proxy-groups'].push(group);
-                existingNames.add(manualNorm);
-            }
-        }
+        this.addManualSwitchGroup();
+        const manualGroupName = this.manualGroupName;
 
         const countries = Object.keys(countryGroups).sort((a, b) => a.localeCompare(b));
         const countryGroupNames = [];

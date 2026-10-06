@@ -47,6 +47,28 @@ describe('Auto Proxy Providers Detection', () => {
     });
 
     describe('Clash Builder', () => {
+        it('offers manual switching in all policy selectors for provider-only subscriptions', async () => {
+            fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml, format: 'clash', url: 'https://example.com/clash-sub' });
+            for (const countryMode of [true, false]) {
+                const builder = new ClashConfigBuilder('https://example.com/clash-sub', ['Youtube', 'Google', 'Github'], [], null, 'zh-CN', 'test-agent', countryMode);
+                const config = yaml.load(await builder.build());
+                const groups = config['proxy-groups'];
+                const manual = groups.find(g => g.name === '🖐️ 手动切换');
+                expect(manual.type).toBe('select');
+                expect(manual.use).toEqual(Object.keys(config['proxy-providers']));
+                expect(manual.proxies).not.toContain('🚀 节点选择');
+                expect(manual.proxies).not.toContain('⚡ 自动选择');
+                expect(manual['exclude-filter']).toBeUndefined();
+                expect(groups.filter(g => g.name === manual.name)).toHaveLength(1);
+                for (const g of groups) {
+                    if (g.name === '🚀 节点选择' || g.proxies?.includes('🚀 节点选择') || g.proxies?.includes('⚡ 自动选择')) {
+                        expect(g.proxies).toContain(manual.name);
+                    }
+                }
+                expect(groups.find(g => g.name === '⚡ 自动选择').proxies).not.toContain(manual.name);
+            }
+        });
+
         it('supports custom and empty automatic-selection exclusion patterns', async () => {
             fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml, format: 'clash', url: 'https://example.com/clash-sub' });
             for (const pattern of ['HK|JP', '']) {

@@ -13,25 +13,24 @@ describe('Issue #371 - custom rule groups keep full proxy choices without countr
         { name: 'Custom-Rule', site_rules: ['google'], ip_rules: [], domain_suffix: [], domain_keyword: [] }
     ];
 
-    const expectedSingboxCountryMembers = [
+    const expectedCountryMembers = [
         '🚀 节点选择',
         '⚡ 自动选择',
         '🖐️ 手动切换',
         'US-Node-1',
         'UK-Node-1',
-        'DIRECT'
+        'DIRECT',
+        'REJECT'
     ];
 
-    const expectedSingboxFlatMembers = [
+    const expectedFlatMembers = [
         '🚀 节点选择',
         '⚡ 自动选择',
         'US-Node-1',
         'UK-Node-1',
-        'DIRECT'
+        'DIRECT',
+        'REJECT'
     ];
-
-    const expectedCountryMembers = [...expectedSingboxCountryMembers, 'REJECT'];
-    const expectedFlatMembers = [...expectedSingboxFlatMembers, 'REJECT'];
 
     const expectCompleteOptionsWithoutCountries = (members, expectedMembers) => {
         expect(members).toEqual(expectedMembers);
@@ -59,7 +58,7 @@ describe('Issue #371 - custom rule groups keep full proxy choices without countr
         await builder.build();
 
         const customRule = builder.config.outbounds.find(outbound => outbound?.tag === 'Custom-Rule');
-        expectCompleteOptionsWithoutCountries(customRule.outbounds, expectedSingboxCountryMembers);
+        expectCompleteOptionsWithoutCountries(customRule.outbounds, expectedCountryMembers);
     });
 
     it('Singbox custom rule includes direct proxy choices when groupByCountry is disabled', async () => {
@@ -81,7 +80,7 @@ describe('Issue #371 - custom rule groups keep full proxy choices without countr
         await builder.build();
 
         const customRule = builder.config.outbounds.find(outbound => outbound?.tag === 'Custom-Rule');
-        expectCompleteOptionsWithoutCountries(customRule.outbounds, expectedSingboxFlatMembers);
+        expectCompleteOptionsWithoutCountries(customRule.outbounds, expectedFlatMembers);
     });
 
     it('Clash custom rule includes direct proxy choices when groupByCountry is enabled', async () => {
@@ -123,7 +122,7 @@ describe('Issue #371 - custom rule groups keep full proxy choices without countr
         await builder.build();
 
         const customRule = builder.config['proxy-groups'].find(group => group?.name === 'Custom-Rule');
-        expectCompleteOptionsWithoutCountries(customRule.proxies, expectedFlatMembers);
+        expectCompleteOptionsWithoutCountries(customRule.proxies, expectedCountryMembers);
     });
 
     it('Surge custom rule includes direct proxy choices when groupByCountry is enabled', async () => {

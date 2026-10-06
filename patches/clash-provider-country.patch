@@ -152,7 +152,7 @@ index 0da4b82..220a0da 100644
          if (this.autoProviderDescriptors) {
              return this.autoProviderDescriptors;
 diff --git a/src/builders/ClashConfigBuilder.js b/src/builders/ClashConfigBuilder.js
-index fe03684..69c2d67 100644
+index fe03684..1e7daf3 100644
 --- a/src/builders/ClashConfigBuilder.js
 +++ b/src/builders/ClashConfigBuilder.js
 @@ -1,12 +1,13 @@
@@ -234,7 +234,42 @@ index fe03684..69c2d67 100644
                  'health-check': {
                      enable: true,
                      url: 'https://www.gstatic.com/generate_204',
-@@ -343,6 +387,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -332,6 +376,34 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+         return this.includeAutoSelect && this.hasSelectableSources(proxyList);
+     }
+ 
++    addManualSwitchGroup() {
++        const proxies = uniqueNames(this.getProxyList());
++        const providers = this.getAllProviderNames();
++        if (!proxies.length && !providers.length) return;
++        this.manualGroupName = this.t('outboundNames.Manual Switch');
++        if (this.hasProxyGroup(this.manualGroupName)) return;
++        this.config['proxy-groups'] ||= [];
++        this.config['proxy-groups'].push({
++            name: this.manualGroupName,
++            type: 'select',
++            proxies,
++            ...(providers.length ? { use: providers } : {})
++        });
++    }
++
++    addSelectors() {
++        this.addManualSwitchGroup();
++        super.addSelectors();
++        if (!this.manualGroupName) return;
++        const policyNames = [this.t('outboundNames.Node Select'), this.t('outboundNames.Auto Select')];
++        for (const group of this.config['proxy-groups'] || []) {
++            if (group.type !== 'select' || group.name === this.manualGroupName) continue;
++            if (group.name === policyNames[0] || group.proxies?.some(name => policyNames.includes(name))) {
++                group.proxies = uniqueNames([...(group.proxies || []), this.manualGroupName]);
++            }
++        }
++    }
++
+     addAutoSelectGroup(proxyList) {
+         if (!this.includeAutoSelect) return;
+         this.config['proxy-groups'] = this.config['proxy-groups'] || [];
+@@ -343,6 +415,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
          const group = {
              name: autoName,
              type: 'url-test',
@@ -242,7 +277,7 @@ index fe03684..69c2d67 100644
              proxies: deepCopy(uniqueNames(proxyList)),
              url: 'https://www.gstatic.com/generate_204',
              interval: 300,
-@@ -377,7 +422,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -377,7 +450,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
  
          // Add 'use' field if we have proxy-providers
          const providerNames = this.getAllProviderNames();
@@ -251,7 +286,7 @@ index fe03684..69c2d67 100644
              group.use = providerNames;
          }
  
-@@ -412,7 +457,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -412,7 +485,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                      };
                      // Add 'use' field if we have proxy-providers
                      const providerNames = this.getAllProviderNames();
@@ -260,7 +295,7 @@ index fe03684..69c2d67 100644
                          group.use = providerNames;
                      }
                      this.config['proxy-groups'].push(group);
-@@ -459,7 +504,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -459,7 +532,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
          };
          // Add 'use' field if we have proxy-providers
          const providerNames = this.getAllProviderNames();
@@ -269,7 +304,7 @@ index fe03684..69c2d67 100644
              group.use = providerNames;
          }
          this.config['proxy-groups'].push(group);
-@@ -470,6 +515,9 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+@@ -470,28 +543,14 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
          const countryGroups = groupProxiesByCountry(proxies, {
              getName: proxy => this.getProxyName(proxy)
          });
@@ -279,15 +314,31 @@ index fe03684..69c2d67 100644
  
          const existingNames = new Set((this.config['proxy-groups'] || []).map(g => normalizeGroupName(g?.name)).filter(Boolean));
  
-@@ -483,7 +531,6 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
-                     type: 'select',
-                     proxies: manualProxyNames
-                 };
+-        const manualProxyNames = proxies.map(p => p?.name).filter(Boolean);
+-        const manualGroupName = manualProxyNames.length > 0 ? this.t('outboundNames.Manual Switch') : null;
+-        if (manualGroupName) {
+-            const manualNorm = normalizeGroupName(manualGroupName);
+-            if (!existingNames.has(manualNorm)) {
+-                const group = {
+-                    name: manualGroupName,
+-                    type: 'select',
+-                    proxies: manualProxyNames
+-                };
 -                // Add 'use' field if we have proxy-providers
-                 const providerNames = this.getAllProviderNames();
-                 if (providerNames.length > 0) {
-                     group.use = providerNames;
-@@ -509,10 +556,13 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+-                const providerNames = this.getAllProviderNames();
+-                if (providerNames.length > 0) {
+-                    group.use = providerNames;
+-                }
+-                this.config['proxy-groups'].push(group);
+-                existingNames.add(manualNorm);
+-            }
+-        }
++        this.addManualSwitchGroup();
++        const manualGroupName = this.manualGroupName;
+ 
+         const countries = Object.keys(countryGroups).sort((a, b) => a.localeCompare(b));
+         const countryGroupNames = [];
+@@ -509,10 +568,13 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                      interval: 300,
                      lazy: false
                  };
@@ -1058,14 +1109,49 @@ index 906549c..acd559c 100644
 +    expect(data.copyError).toBeTruthy();
 +  });
  });
+diff --git a/test/issue-371-custom-rule-options.test.js b/test/issue-371-custom-rule-options.test.js
+index 7388bbe..7c23cef 100644
+--- a/test/issue-371-custom-rule-options.test.js
++++ b/test/issue-371-custom-rule-options.test.js
+@@ -122,7 +122,7 @@ describe('Issue #371 - custom rule groups keep full proxy choices without countr
+         await builder.build();
+ 
+         const customRule = builder.config['proxy-groups'].find(group => group?.name === 'Custom-Rule');
+-        expectCompleteOptionsWithoutCountries(customRule.proxies, expectedFlatMembers);
++        expectCompleteOptionsWithoutCountries(customRule.proxies, expectedCountryMembers);
+     });
+ 
+     it('Surge custom rule includes direct proxy choices when groupByCountry is enabled', async () => {
 diff --git a/test/proxy-providers.test.js b/test/proxy-providers.test.js
-index afefb52..0f9df8a 100644
+index afefb52..2748fed 100644
 --- a/test/proxy-providers.test.js
 +++ b/test/proxy-providers.test.js
-@@ -47,6 +47,100 @@ describe('Auto Proxy Providers Detection', () => {
+@@ -47,6 +47,122 @@ describe('Auto Proxy Providers Detection', () => {
      });
  
      describe('Clash Builder', () => {
++        it('offers manual switching in all policy selectors for provider-only subscriptions', async () => {
++            fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml, format: 'clash', url: 'https://example.com/clash-sub' });
++            for (const countryMode of [true, false]) {
++                const builder = new ClashConfigBuilder('https://example.com/clash-sub', ['Youtube', 'Google', 'Github'], [], null, 'zh-CN', 'test-agent', countryMode);
++                const config = yaml.load(await builder.build());
++                const groups = config['proxy-groups'];
++                const manual = groups.find(g => g.name === '🖐️ 手动切换');
++                expect(manual.type).toBe('select');
++                expect(manual.use).toEqual(Object.keys(config['proxy-providers']));
++                expect(manual.proxies).not.toContain('🚀 节点选择');
++                expect(manual.proxies).not.toContain('⚡ 自动选择');
++                expect(manual['exclude-filter']).toBeUndefined();
++                expect(groups.filter(g => g.name === manual.name)).toHaveLength(1);
++                for (const g of groups) {
++                    if (g.name === '🚀 节点选择' || g.proxies?.includes('🚀 节点选择') || g.proxies?.includes('⚡ 自动选择')) {
++                        expect(g.proxies).toContain(manual.name);
++                    }
++                }
++                expect(groups.find(g => g.name === '⚡ 自动选择').proxies).not.toContain(manual.name);
++            }
++        });
++
 +        it('supports custom and empty automatic-selection exclusion patterns', async () => {
 +            fetchSubscriptionWithFormat.mockResolvedValue({ content: mockClashYaml, format: 'clash', url: 'https://example.com/clash-sub' });
 +            for (const pattern of ['HK|JP', '']) {
