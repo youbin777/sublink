@@ -1,0 +1,152 @@
+diff --git a/src/builders/BaseConfigBuilder.js b/src/builders/BaseConfigBuilder.js
+index 0da4b82..4ef20e0 100644
+--- a/src/builders/BaseConfigBuilder.js
++++ b/src/builders/BaseConfigBuilder.js
+@@ -102,6 +102,7 @@ export class BaseConfigBuilder {
+                             // If format is compatible with target client, use as provider
+                             if (this.isCompatibleProviderFormat(format)) {
+                                 this.providerUrls.push(originalUrl);
++                                this.registerProviderContent(content);
+                                 continue;  // Skip parsing, will be used as provider
+                             }
+ 
+@@ -186,6 +187,10 @@ export class BaseConfigBuilder {
+         return false;  // Default: no provider support
+     }
+ 
++    registerProviderContent(content) {
++        // Provider metadata is optional and remains specific to the target client.
++    }
++
+     getAutoProviderDescriptors(reservedNames = []) {
+         if (this.autoProviderDescriptors) {
+             return this.autoProviderDescriptors;
+diff --git a/src/builders/ClashConfigBuilder.js b/src/builders/ClashConfigBuilder.js
+index fe03684..68f65ca 100644
+--- a/src/builders/ClashConfigBuilder.js
++++ b/src/builders/ClashConfigBuilder.js
+@@ -1,7 +1,7 @@
+ import yaml from 'js-yaml';
+ import { CLASH_CONFIG, generateRules, generateClashRuleSets, getOutbounds, PREDEFINED_RULE_SETS, DIRECT_DEFAULT_RULES } from '../config/index.js';
+ import { BaseConfigBuilder } from './BaseConfigBuilder.js';
+-import { deepCopy, groupProxiesByCountry } from '../utils.js';
++import { deepCopy, groupProxiesByCountry, parseCountryFromNodeName } from '../utils.js';
+ import { addProxyWithDedup } from './helpers/proxyHelpers.js';
+ import { buildSelectorMembers, buildNodeSelectMembers, buildCustomRuleMembers, uniqueNames } from './helpers/groupBuilder.js';
+ import { emitClashRules, sanitizeClashProxyGroups } from './helpers/clashConfigUtils.js';
+@@ -56,6 +56,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+         this.selectedRules = selectedRules;
+         this.customRules = customRules;
+         this.countryGroupNames = [];
++        this.providerCountryGroups = {};
+         this.manualGroupName = null;
+         this.enableClashUI = enableClashUI;
+         this.externalController = externalController;
+@@ -71,6 +72,24 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+         return format === 'clash';
+     }
+ 
++    registerProviderContent(content) {
++        if (!this.groupByCountry) return;
++        // Keep provider refresh intact; only names are needed to classify its nodes.
++        try {
++            const config = yaml.load(content);
++            if (!Array.isArray(config?.proxies)) return;
++            config.proxies.forEach(proxy => {
++                if (typeof proxy?.name !== 'string' || !proxy.name.trim()) return;
++                const country = parseCountryFromNodeName(proxy.name);
++                if (!country) return;
++                const group = this.providerCountryGroups[country.name] ||= { ...country, proxies: [] };
++                if (!group.proxies.includes(proxy.name)) group.proxies.push(proxy.name);
++            });
++        } catch (_) {
++            // Invalid optional metadata must not disable a working provider.
++        }
++    }
++
+     /**
+      * Generate proxy-providers configuration from collected URLs
+      * @returns {object} - proxy-providers object
+@@ -470,6 +489,9 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+         const countryGroups = groupProxiesByCountry(proxies, {
+             getName: proxy => this.getProxyName(proxy)
+         });
++        Object.entries(this.providerCountryGroups).forEach(([country, group]) => {
++            if (!countryGroups[country]) countryGroups[country] = { ...group, proxies: [] };
++        });
+ 
+         const existingNames = new Set((this.config['proxy-groups'] || []).map(g => normalizeGroupName(g?.name)).filter(Boolean));
+ 
+@@ -483,7 +505,6 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+                     type: 'select',
+                     proxies: manualProxyNames
+                 };
+-                // Add 'use' field if we have proxy-providers
+                 const providerNames = this.getAllProviderNames();
+                 if (providerNames.length > 0) {
+                     group.use = providerNames;
+@@ -509,10 +530,13 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
+                     interval: 300,
+                     lazy: false
+                 };
+-                // Add 'use' field if we have proxy-providers
++                const providerNodes = this.providerCountryGroups[country]?.proxies || [];
+                 const providerNames = this.getAllProviderNames();
+-                if (providerNames.length > 0) {
++                if (providerNodes.length > 0 && providerNames.length > 0) {
+                     group.use = providerNames;
++                    // Exact escaped names avoid pulling other countries into the group.
++                    const names = providerNodes.map(node => node.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
++                    group.filter = `^(?:${names.join('|')})$`;
+                 }
+                 this.config['proxy-groups'].push(group);
+                 existingNames.add(norm);
+diff --git a/test/proxy-providers.test.js b/test/proxy-providers.test.js
+index afefb52..50e532a 100644
+--- a/test/proxy-providers.test.js
++++ b/test/proxy-providers.test.js
+@@ -47,6 +47,44 @@ describe('Auto Proxy Providers Detection', () => {
+     });
+ 
+     describe('Clash Builder', () => {
++        it('creates filtered country groups for provider-only subscriptions', async () => {
++            fetchSubscriptionWithFormat.mockResolvedValue({
++                content: mockClashYaml,
++                format: 'clash',
++                url: 'https://example.com/clash-sub'
++            });
++            const builder = new ClashConfigBuilder('https://example.com/clash-sub', [], [], null, 'zh-CN', 'test-agent', true);
++            const config = yaml.load(await builder.build());
++            const hk = config['proxy-groups'].find(g => g.name === '🇭🇰 Hong Kong');
++            const jp = config['proxy-groups'].find(g => g.name === '🇯🇵 Japan');
++            expect(hk).toBeDefined();
++            expect(jp).toBeDefined();
++            expect(config.proxies || []).toHaveLength(0);
++            expect(hk.use).toEqual(Object.keys(config['proxy-providers']));
++            expect(new RegExp(hk.filter).test('HK-Node')).toBe(true);
++            expect(new RegExp(hk.filter).test('JP-Node')).toBe(false);
++            expect(new RegExp(jp.filter).test('JP-Node')).toBe(true);
++            expect(config['proxy-groups'].find(g => g.name === '🚀 节点选择').proxies).toContain(hk.name);
++        });
++
++        it('escapes provider names and keeps mixed inline/provider countries separate', async () => {
++            fetchSubscriptionWithFormat.mockResolvedValue({
++                content: mockClashYaml.replace('HK-Node', 'HK-[Node].+ (1)'),
++                format: 'clash',
++                url: 'https://example.com/clash-sub'
++            });
++            const inline = 'vless://00000000-0000-4000-8000-000000000001@us.example.com:443?type=tcp#US-Manual';
++            const builder = new ClashConfigBuilder(`https://example.com/clash-sub\n${inline}`, [], [], null, 'zh-CN', 'test-agent', true);
++            const config = yaml.load(await builder.build());
++            const hk = config['proxy-groups'].find(g => g.name === '🇭🇰 Hong Kong');
++            const us = config['proxy-groups'].find(g => g.name === '🇺🇸 United States');
++            expect(new RegExp(hk.filter).test('HK-[Node].+ (1)')).toBe(true);
++            expect(new RegExp(hk.filter).test('HK-Nodexxx 1')).toBe(false);
++            expect(us.proxies).toContain('US-Manual');
++            expect(us.use).toBeUndefined();
++            expect(hk.proxies).not.toContain('US-Manual');
++        });
++
+         it('should use Clash URL as proxy-provider when format is Clash YAML', async () => {
+             // Mock fetchSubscriptionWithFormat to return Clash format
+             fetchSubscriptionWithFormat.mockResolvedValue({

@@ -1,7 +1,7 @@
 import yaml from 'js-yaml';
 import { CLASH_CONFIG, generateRules, generateClashRuleSets, getOutbounds, PREDEFINED_RULE_SETS, DIRECT_DEFAULT_RULES } from '../config/index.js';
 import { BaseConfigBuilder } from './BaseConfigBuilder.js';
-import { deepCopy, groupProxiesByCountry } from '../utils.js';
+import { deepCopy, groupProxiesByCountry, parseCountryFromNodeName } from '../utils.js';
 import { addProxyWithDedup } from './helpers/proxyHelpers.js';
 import { buildSelectorMembers, buildNodeSelectMembers, buildCustomRuleMembers, uniqueNames } from './helpers/groupBuilder.js';
 import { emitClashRules, sanitizeClashProxyGroups } from './helpers/clashConfigUtils.js';
@@ -56,6 +56,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
         this.selectedRules = selectedRules;
         this.customRules = customRules;
         this.countryGroupNames = [];
+        this.providerCountryGroups = {};
         this.manualGroupName = null;
         this.enableClashUI = enableClashUI;
         this.externalController = externalController;
@@ -69,6 +70,24 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
      */
     isCompatibleProviderFormat(format) {
         return format === 'clash';
+    }
+
+    registerProviderContent(content) {
+        if (!this.groupByCountry) return;
+        // Keep provider refresh intact; only names are needed to classify its nodes.
+        try {
+            const config = yaml.load(content);
+            if (!Array.isArray(config?.proxies)) return;
+            config.proxies.forEach(proxy => {
+                if (typeof proxy?.name !== 'string' || !proxy.name.trim()) return;
+                const country = parseCountryFromNodeName(proxy.name);
+                if (!country) return;
+                const group = this.providerCountryGroups[country.name] ||= { ...country, proxies: [] };
+                if (!group.proxies.includes(proxy.name)) group.proxies.push(proxy.name);
+            });
+        } catch (_) {
+            // Invalid optional metadata must not disable a working provider.
+        }
     }
 
     /**
@@ -470,6 +489,9 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
         const countryGroups = groupProxiesByCountry(proxies, {
             getName: proxy => this.getProxyName(proxy)
         });
+        Object.entries(this.providerCountryGroups).forEach(([country, group]) => {
+            if (!countryGroups[country]) countryGroups[country] = { ...group, proxies: [] };
+        });
 
         const existingNames = new Set((this.config['proxy-groups'] || []).map(g => normalizeGroupName(g?.name)).filter(Boolean));
 
@@ -483,7 +505,6 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                     type: 'select',
                     proxies: manualProxyNames
                 };
-                // Add 'use' field if we have proxy-providers
                 const providerNames = this.getAllProviderNames();
                 if (providerNames.length > 0) {
                     group.use = providerNames;
@@ -509,10 +530,13 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                     interval: 300,
                     lazy: false
                 };
-                // Add 'use' field if we have proxy-providers
+                const providerNodes = this.providerCountryGroups[country]?.proxies || [];
                 const providerNames = this.getAllProviderNames();
-                if (providerNames.length > 0) {
+                if (providerNodes.length > 0 && providerNames.length > 0) {
                     group.use = providerNames;
+                    // Exact escaped names avoid pulling other countries into the group.
+                    const names = providerNodes.map(node => node.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+                    group.filter = `^(?:${names.join('|')})$`;
                 }
                 this.config['proxy-groups'].push(group);
                 existingNames.add(norm);

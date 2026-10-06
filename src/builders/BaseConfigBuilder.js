@@ -102,6 +102,7 @@ export class BaseConfigBuilder {
                             // If format is compatible with target client, use as provider
                             if (this.isCompatibleProviderFormat(format)) {
                                 this.providerUrls.push(originalUrl);
+                                this.registerProviderContent(content);
                                 continue;  // Skip parsing, will be used as provider
                             }
 
@@ -184,6 +185,10 @@ export class BaseConfigBuilder {
      */
     isCompatibleProviderFormat(format) {
         return false;  // Default: no provider support
+    }
+
+    registerProviderContent(content) {
+        // Provider metadata is optional and remains specific to the target client.
     }
 
     getAutoProviderDescriptors(reservedNames = []) {

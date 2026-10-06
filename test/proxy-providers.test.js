@@ -47,6 +47,44 @@ describe('Auto Proxy Providers Detection', () => {
     });
 
     describe('Clash Builder', () => {
+        it('creates filtered country groups for provider-only subscriptions', async () => {
+            fetchSubscriptionWithFormat.mockResolvedValue({
+                content: mockClashYaml,
+                format: 'clash',
+                url: 'https://example.com/clash-sub'
+            });
+            const builder = new ClashConfigBuilder('https://example.com/clash-sub', [], [], null, 'zh-CN', 'test-agent', true);
+            const config = yaml.load(await builder.build());
+            const hk = config['proxy-groups'].find(g => g.name === '🇭🇰 Hong Kong');
+            const jp = config['proxy-groups'].find(g => g.name === '🇯🇵 Japan');
+            expect(hk).toBeDefined();
+            expect(jp).toBeDefined();
+            expect(config.proxies || []).toHaveLength(0);
+            expect(hk.use).toEqual(Object.keys(config['proxy-providers']));
+            expect(new RegExp(hk.filter).test('HK-Node')).toBe(true);
+            expect(new RegExp(hk.filter).test('JP-Node')).toBe(false);
+            expect(new RegExp(jp.filter).test('JP-Node')).toBe(true);
+            expect(config['proxy-groups'].find(g => g.name === '🚀 节点选择').proxies).toContain(hk.name);
+        });
+
+        it('escapes provider names and keeps mixed inline/provider countries separate', async () => {
+            fetchSubscriptionWithFormat.mockResolvedValue({
+                content: mockClashYaml.replace('HK-Node', 'HK-[Node].+ (1)'),
+                format: 'clash',
+                url: 'https://example.com/clash-sub'
+            });
+            const inline = 'vless://00000000-0000-4000-8000-000000000001@us.example.com:443?type=tcp#US-Manual';
+            const builder = new ClashConfigBuilder(`https://example.com/clash-sub\n${inline}`, [], [], null, 'zh-CN', 'test-agent', true);
+            const config = yaml.load(await builder.build());
+            const hk = config['proxy-groups'].find(g => g.name === '🇭🇰 Hong Kong');
+            const us = config['proxy-groups'].find(g => g.name === '🇺🇸 United States');
+            expect(new RegExp(hk.filter).test('HK-[Node].+ (1)')).toBe(true);
+            expect(new RegExp(hk.filter).test('HK-Nodexxx 1')).toBe(false);
+            expect(us.proxies).toContain('US-Manual');
+            expect(us.use).toBeUndefined();
+            expect(hk.proxies).not.toContain('US-Manual');
+        });
+
         it('should use Clash URL as proxy-provider when format is Clash YAML', async () => {
             // Mock fetchSubscriptionWithFormat to return Clash format
             fetchSubscriptionWithFormat.mockResolvedValue({

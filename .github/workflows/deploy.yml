@@ -10,6 +10,7 @@ on:
       - '.github/workflows/deploy.yml'
       - 'scripts/auto-upgrade.mjs'
       - 'scripts/auto-upgrade.test.mjs'
+      - 'patches/clash-provider-country.patch'
 
 permissions:
   contents: read
@@ -54,6 +55,11 @@ jobs:
       - name: Preserve production Worker and KV
         if: steps.release.outputs.upgrade == 'true'
         run: node automation/scripts/auto-upgrade.mjs prepare upstream
+      - name: Preserve provider country-group fix
+        if: steps.release.outputs.upgrade == 'true'
+        run: |
+          git -C upstream apply --check ../automation/patches/clash-provider-country.patch
+          git -C upstream apply ../automation/patches/clash-provider-country.patch
       - name: Install locked upstream dependencies
         if: steps.release.outputs.upgrade == 'true'
         working-directory: upstream
