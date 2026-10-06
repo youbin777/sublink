@@ -1,84 +1,93 @@
-name: Deploy Worker
+name: Sublink stable auto-upgrade
 
 on:
+  schedule:
+    - cron: '17 1 * * *'
   workflow_dispatch:
-  repository_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy.yml'
+      - 'scripts/auto-upgrade.mjs'
+      - 'scripts/auto-upgrade.test.mjs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sublink-production-upgrade
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  upgrade:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Node.js
+      - name: Checkout trusted automation
+        uses: actions/checkout@v4
+        with:
+          path: automation
+          persist-credentials: false
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '21'
-      
-      - name: Install dependencies
-        run: npm install
-      
-      - name: Install wrangler
-        run: npm install -g wrangler
-      
-      - name: Check and Create KV Namespace
+          node-version: '22'
+      - name: Verify upgrade safeguards
+        run: node --test automation/scripts/auto-upgrade.test.mjs
+      - name: Verify production deployment credential
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-        run: |
-          KV_NAMESPACE="SUBLINK_KV"
-          echo "Checking for KV namespace: $KV_NAMESPACE"
-          if ! LIST_OUTPUT=$(wrangler kv namespace list 2>&1); then
-            echo "Error getting KV namespace list: $LIST_OUTPUT"
-            exit 1
-          fi
-          
-          LIST_OUTPUT=$(echo "$LIST_OUTPUT" | grep -v "Cloudflare collects" | grep -v "telemetry")
-          echo "Cleaned KV namespace list output: $LIST_OUTPUT"
-          
-          if ! echo "$LIST_OUTPUT" | jq empty; then
-            echo "Invalid JSON output from wrangler"
-            exit 1
-          fi
-          
-          KV_ID=$(echo "$LIST_OUTPUT" | jq -r '.[] | select(.title == "sublink-worker-'$KV_NAMESPACE'") | .id')
-          
-          if [ -z "$KV_ID" ]; then
-              echo "KV namespace $KV_NAMESPACE does not exist. Creating..."
-              CREATE_OUTPUT=$(wrangler kv namespace create "sublink-worker-$KV_NAMESPACE" 2>&1)
-              echo "Create KV namespace output: $CREATE_OUTPUT"
-              KV_ID=$(echo "$CREATE_OUTPUT" | grep -o '[0-9a-f]\{32\}')
-              
-              if [ -z "$KV_ID" ]; then
-                  echo "Failed to extract KV ID. Full output: $CREATE_OUTPUT"
-                  exit 1
-              fi
-              
-              echo "KV namespace $KV_NAMESPACE created successfully with ID: $KV_ID"
-          else
-              echo "KV namespace $KV_NAMESPACE already exists with ID: $KV_ID"
-          fi
-          echo "KV_ID=$KV_ID" >> $GITHUB_ENV
-          
-      - name: Update wrangler.toml
-        run: |
-          # Read the entire content of wrangler.toml
-          WRANGLER_CONTENT=$(cat wrangler.toml)
-          
-          # Update the KV namespace ID
-          UPDATED_CONTENT=$(echo "$WRANGLER_CONTENT" | sed 's/id = "[^"]*"/id = "'$KV_ID'"/')
-          
-          # Write the updated content back to wrangler.toml
-          echo "$UPDATED_CONTENT" > wrangler.toml
-          
-          echo "Updated wrangler.toml content:"
-          cat wrangler.toml
-          
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
+        run: node automation/scripts/auto-upgrade.mjs preflight
+      - name: Detect latest stable release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node automation/scripts/auto-upgrade.mjs detect
+      - name: Checkout immutable upstream release
+        if: steps.release.outputs.upgrade == 'true'
+        uses: actions/checkout@v4
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy
+          repository: 7Sageer/sublink-worker
+          ref: ${{ steps.release.outputs.sha }}
+          path: upstream
+          persist-credentials: false
+      - name: Preserve production Worker and KV
+        if: steps.release.outputs.upgrade == 'true'
+        run: node automation/scripts/auto-upgrade.mjs prepare upstream
+      - name: Install locked upstream dependencies
+        if: steps.release.outputs.upgrade == 'true'
+        working-directory: upstream
+        run: npm ci --no-audit --no-fund
+      - name: Run official release tests
+        if: steps.release.outputs.upgrade == 'true'
+        working-directory: upstream
+        run: npm test
+      - name: Install deployment tooling
+        if: steps.release.outputs.upgrade == 'true'
+        run: npm install --prefix tooling --no-audit --no-fund wrangler@4.51.0
+      - name: Upload, activate, verify, and rollback on failure
+        if: steps.release.outputs.upgrade == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: '80a521ba84f9998155fd875767e1e947'
+          WRANGLER_SEND_METRICS: 'false'
+        run: node automation/scripts/auto-upgrade.mjs apply upstream
+      - name: Save deployment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sublink-upgrade-${{ github.run_id }}
+          path: |
+            upgrade-state.json
+            deployment-before.json
+            candidate-version.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Summarize
+        if: always()
+        env:
+          RELEASE: ${{ steps.release.outputs.tag }}
+          UPGRADE: ${{ steps.release.outputs.upgrade }}
+          RESULT: ${{ job.status }}
+        run: |
+          printf 'Release: %s\nUpgrade needed: %s\nResult: %s\n' "$RELEASE" "$UPGRADE" "$RESULT" >> "$GITHUB_STEP_SUMMARY"
