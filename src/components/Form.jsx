@@ -35,7 +35,9 @@ export const Form = (props) => {
     optional: t('optional'),
     customShortCodePlaceholder: t('customShortCodePlaceholder'),
     showFullLinks: t('showFullLinks'),
-    manualCopyHelp: t('manualCopyHelp')
+    manualCopyHelp: t('manualCopyHelp'),
+    urlImportSuccess: t('urlImportSuccess'),
+    urlImportFailure: t('urlImportFailure')
   };
 
   const scriptContent = `
@@ -51,6 +53,15 @@ export const Form = (props) => {
       <form {...{'x-on:submit.prevent': 'submitForm'}} class="space-y-8">
 
       {/* Input Section */}
+      <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
+        <label for="urlToImport" class="block text-base font-semibold text-gray-900 dark:text-white mb-3">{t('urlImportTitle')}</label>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">{t('urlImportHelp')}</p>
+        <div class="flex flex-col sm:flex-row gap-3">
+          <input id="urlToImport" type="url" x-model="urlToImport" placeholder="https://…/clash?config=…" class="flex-1 min-w-0 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+          <button type="button" x-on:click="importSubscriptionUrl()" x-bind:disabled="urlImporting" class="px-4 py-2 rounded-lg bg-primary-500 text-white font-semibold disabled:opacity-50">{t('urlImportTitle')}</button>
+        </div>
+        <p role="status" x-show="urlImportMessage" x-text="urlImportMessage" x-bind:class="urlImportError ? 'text-red-600' : 'text-green-600'" class="mt-3 text-sm"></p>
+      </div>
       <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 transition-all duration-300 hover:shadow-md group">
         <TextareaWithActions
           id="input"

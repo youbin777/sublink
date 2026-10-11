@@ -122,6 +122,39 @@ export const formLogicFn = (t) => {
             shorteningText: '',
             showFullLinksText: '',
 
+            urlToImport: '',
+            urlImportMessage: '',
+            urlImportError: false,
+            urlImporting: false,
+            async importSubscriptionUrl() {
+                if (this.urlImporting) return;
+                this.urlImporting = true;
+                const text = this.urlToImport.trim();
+                this.urlImportMessage = '';
+                this.urlImportError = false;
+                try {
+                    if (!this.isSubscriptionUrl(text)) throw new Error('invalid');
+                    let url = new URL(text);
+                    if (/^\/([bcxs])\//.test(url.pathname)) {
+                        const response = await fetch(`/resolve?url=${encodeURIComponent(text)}`);
+                        if (!response.ok) throw new Error('resolve');
+                        url = new URL((await response.json()).originalUrl);
+                    }
+                    if (!/^\/(singbox|clash|xray|surge)$/.test(url.pathname) || !url.searchParams.get('config')) throw new Error('invalid');
+                    for (const key of ['selectedRules', 'customRules']) {
+                        if (url.searchParams.has(key) && !Array.isArray(JSON.parse(url.searchParams.get(key)))) throw new Error('invalid');
+                    }
+                    if (this.urlToImport.trim() !== text) return;
+                    this.resetLinkResults();
+                    this.populateFormFromUrl(url);
+                    this.urlImportMessage = window.APP_TRANSLATIONS.urlImportSuccess;
+                } catch {
+                    this.urlImportError = true;
+                    this.urlImportMessage = window.APP_TRANSLATIONS.urlImportFailure;
+                } finally {
+                    this.urlImporting = false;
+                }
+            },
             init() {
                 // Load translations
                 if (window.APP_TRANSLATIONS) {
@@ -604,6 +637,7 @@ export const formLogicFn = (t) => {
 
                 try {
                     const url = new URL(text);
+                    if (!['http:', 'https:'].includes(url.protocol)) return false;
                     // Check if it matches our short link pattern: /[bcxs]/[code]
                     const pathMatch = url.pathname.match(/^\/([bcxs])\/([a-zA-Z0-9_-]+)$/);
                     if (pathMatch) {
@@ -677,6 +711,16 @@ export const formLogicFn = (t) => {
             // Populate form fields from parsed URL
             populateFormFromUrl(url) {
                 const params = new URLSearchParams(url.search);
+                this.customUA = params.get('ua') || '';
+                this.externalController = params.get('external_controller') || '';
+                this.externalUiDownloadUrl = params.get('external_ui_download_url') || '';
+                this.autoExcludeNodes = params.get('auto_exclude') ?? 'US-LAX|JP-TYO|TW-TPE|KR-INC';
+                this.currentConfigId = params.get('configId') || '';
+                this.updateConfigIdInUrl(this.currentConfigId);
+                if (!params.has('selectedRules')) {
+                    this.selectedPredefinedRule = 'balanced';
+                    this.applyPredefinedRule();
+                }
 
                 // Extract config (the original subscription URLs)
                 const config = params.get('config');
@@ -703,7 +747,7 @@ export const formLogicFn = (t) => {
                 if (customRules) {
                     try {
                         const parsed = JSON.parse(customRules);
-                        if (Array.isArray(parsed) && parsed.length > 0) {
+                        if (Array.isArray(parsed)) {
                             // Dispatch custom event for CustomRules component to listen
                             window.dispatchEvent(new CustomEvent('restore-custom-rules', {
                                 detail: { rules: parsed }
@@ -715,6 +759,7 @@ export const formLogicFn = (t) => {
                 }
 
                 // Extract other parameters
+                if (!customRules) window.dispatchEvent(new CustomEvent('restore-custom-rules', { detail: { rules: [] } }));
                 this.groupByCountry = params.get('group_by_country') === 'true';
                 this.includeAutoSelect = params.get('include_auto_select') !== 'false';
                 this.enableClashUI = params.get('enable_clash_ui') === 'true';

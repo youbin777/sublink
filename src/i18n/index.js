@@ -4,6 +4,10 @@ import { checkStartsWith } from "../utils.js";
 // 定义语言包
 export const translations = {
   'zh-CN': {
+    urlImportTitle: '从 URL 解析',
+    urlImportHelp: '粘贴 Sublink Worker 转换链接或本站短链接，还原订阅源和配置。解析后可修改设置并重新转换。',
+    urlImportSuccess: '已还原订阅源和配置，请检查后重新转换。',
+    urlImportFailure: '解析失败，请检查是否为有效的 Sublink Worker 转换链接或本站短链接。',
     enableClashUI: '启用 Clash API',
     enableClashUITip: '在 SingBox 配置中启用 Clash API (支持 Dashboard 面板)，默认端口 9090',
     externalController: '外部控制端口',
@@ -181,6 +185,10 @@ export const translations = {
     later: '稍后'
   },
   'en-US': {
+    urlImportTitle: 'Parse from URL',
+    urlImportHelp: 'Paste a Sublink Worker conversion URL or a short link from this instance to restore sources and settings.',
+    urlImportSuccess: 'Sources and settings restored. Review them and convert again.',
+    urlImportFailure: 'Unable to parse this link. Use a valid Sublink Worker conversion URL or a short link from this instance.',
     enableClashUI: 'Enable Clash API',
     enableClashUITip: 'Enable Clash API in SingBox config (Support Dashboard), default port 9090',
     externalController: 'External Controller',
@@ -357,6 +365,10 @@ export const translations = {
     later: 'Later'
   },
   'fa': {
+    urlImportTitle: 'بازیابی از URL',
+    urlImportHelp: 'پیوند تبدیل Sublink Worker یا پیوند کوتاه این سرویس را برای بازیابی تنظیمات وارد کنید.',
+    urlImportSuccess: 'تنظیمات بازیابی شد. پس از بررسی دوباره تبدیل کنید.',
+    urlImportFailure: 'پیوند معتبر Sublink Worker یا پیوند کوتاه این سرویس را وارد کنید.',
     missingInput: 'پارامتر ورودی وجود ندارد',
     missingConfig: 'پارامتر پیکربندی وجود ندارد',
     missingUrl: 'پارامتر URL وجود ندارد',
@@ -527,6 +539,10 @@ export const translations = {
     later: 'بعداً'
   },
   'ru': {
+    urlImportTitle: 'Разобрать URL',
+    urlImportHelp: 'Вставьте ссылку конвертации Sublink Worker или короткую ссылку этого сервиса, чтобы восстановить настройки.',
+    urlImportSuccess: 'Источники и настройки восстановлены. Проверьте их и повторите конвертацию.',
+    urlImportFailure: 'Не удалось разобрать ссылку. Используйте ссылку Sublink Worker или короткую ссылку этого сервиса.',
     missingInput: 'Отсутствует входной параметр',
     missingConfig: 'Отсутствует параметр конфигурации',
     missingUrl: 'Отсутствует параметр URL',

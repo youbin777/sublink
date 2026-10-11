@@ -478,21 +478,95 @@ index 45315f1..9023b89 100644
                  ', url=http://www.gstatic.com/generate_204, interval=300'
              )
          );
+diff --git a/src/builders/helpers/groupBuilder.js b/src/builders/helpers/groupBuilder.js
+index a73a361..0c96286 100644
+--- a/src/builders/helpers/groupBuilder.js
++++ b/src/builders/helpers/groupBuilder.js
+@@ -13,15 +13,15 @@ export function uniqueNames(names = []) {
+     return result;
+ }
+ 
+-export function withDirectReject(options = []) {
++export function withDirectReject(options = [], { includeReject = true } = {}) {
+     return uniqueNames([
+         ...options,
+         'DIRECT',
+-        'REJECT'
++        ...(includeReject ? ['REJECT'] : [])
+     ]);
+ }
+ 
+-export function buildNodeSelectMembers({ proxyList = [], translator, groupByCountry = false, manualGroupName, countryGroupNames = [], includeAutoSelect = true }) {
++export function buildNodeSelectMembers({ proxyList = [], translator, groupByCountry = false, manualGroupName, countryGroupNames = [], includeAutoSelect = true, includeReject = true }) {
+     if (!translator) {
+         throw new Error('buildNodeSelectMembers requires a translator function');
+     }
+@@ -36,10 +36,10 @@ export function buildNodeSelectMembers({ proxyList = [], translator, groupByCoun
+             ...(includeAutoSelect ? [autoName] : []),
+             ...proxyList
+         ];
+-    return withDirectReject(base);
++    return withDirectReject(base, { includeReject });
+ }
+ 
+-export function buildSelectorMembers({ proxyList = [], translator, groupByCountry = false, manualGroupName, countryGroupNames = [], includeAutoSelect = true }) {
++export function buildSelectorMembers({ proxyList = [], translator, groupByCountry = false, manualGroupName, countryGroupNames = [], includeAutoSelect = true, includeReject = true }) {
+     if (!translator) {
+         throw new Error('buildSelectorMembers requires a translator function');
+     }
+@@ -54,10 +54,10 @@ export function buildSelectorMembers({ proxyList = [], translator, groupByCountr
+             translator('outboundNames.Node Select'),
+             ...proxyList
+         ];
+-    return withDirectReject(base);
++    return withDirectReject(base, { includeReject });
+ }
+ 
+-export function buildCustomRuleMembers({ proxyList = [], translator, manualGroupName, includeAutoSelect = true }) {
++export function buildCustomRuleMembers({ proxyList = [], translator, manualGroupName, includeAutoSelect = true, includeReject = true }) {
+     if (!translator) {
+         throw new Error('buildCustomRuleMembers requires a translator function');
+     }
+@@ -66,5 +66,5 @@ export function buildCustomRuleMembers({ proxyList = [], translator, manualGroup
+         ...(includeAutoSelect ? [translator('outboundNames.Auto Select')] : []),
+         ...(manualGroupName ? [manualGroupName] : []),
+         ...proxyList
+-    ]);
++    ], { includeReject });
+ }
 diff --git a/src/components/Form.jsx b/src/components/Form.jsx
-index 31218b9..1f18111 100644
+index 31218b9..c691d74 100644
 --- a/src/components/Form.jsx
 +++ b/src/components/Form.jsx
-@@ -34,7 +34,8 @@ export const Form = (props) => {
+@@ -34,7 +34,10 @@ export const Form = (props) => {
      customShortCode: t('customShortCode'),
      optional: t('optional'),
      customShortCodePlaceholder: t('customShortCodePlaceholder'),
 -    showFullLinks: t('showFullLinks')
 +    showFullLinks: t('showFullLinks'),
-+    manualCopyHelp: t('manualCopyHelp')
++    manualCopyHelp: t('manualCopyHelp'),
++    urlImportSuccess: t('urlImportSuccess'),
++    urlImportFailure: t('urlImportFailure')
    };
  
    const scriptContent = `
-@@ -123,6 +124,8 @@ export const Form = (props) => {
+@@ -50,6 +53,15 @@ export const Form = (props) => {
+       <form {...{'x-on:submit.prevent': 'submitForm'}} class="space-y-8">
+ 
+       {/* Input Section */}
++      <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
++        <label for="urlToImport" class="block text-base font-semibold text-gray-900 dark:text-white mb-3">{t('urlImportTitle')}</label>
++        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">{t('urlImportHelp')}</p>
++        <div class="flex flex-col sm:flex-row gap-3">
++          <input id="urlToImport" type="url" x-model="urlToImport" placeholder="https://…/clash?config=…" class="flex-1 min-w-0 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
++          <button type="button" x-on:click="importSubscriptionUrl()" x-bind:disabled="urlImporting" class="px-4 py-2 rounded-lg bg-primary-500 text-white font-semibold disabled:opacity-50">{t('urlImportTitle')}</button>
++        </div>
++        <p role="status" x-show="urlImportMessage" x-text="urlImportMessage" x-bind:class="urlImportError ? 'text-red-600' : 'text-green-600'" class="mt-3 text-sm"></p>
++      </div>
+       <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 transition-all duration-300 hover:shadow-md group">
+         <TextareaWithActions
+           id="input"
+@@ -123,6 +135,8 @@ export const Form = (props) => {
    {/* Advanced Options Content */ }
    <div x-show="showAdvanced" {...{'x-transition:enter': 'transition ease-out duration-300', 'x-transition:enter-start': 'opacity-0 transform -translate-y-4', 'x-transition:enter-end': 'opacity-100 transform translate-y-0', 'x-transition:leave': 'transition ease-in duration-200', 'x-transition:leave-start': 'opacity-100 transform translate-y-0', 'x-transition:leave-end': 'opacity-0 transform -translate-y-4'}} class="space-y-6">
  
@@ -501,7 +575,7 @@ index 31218b9..1f18111 100644
      {/* Rule Selection */ }
      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
        <div class="flex items-center justify-between mb-4">
-@@ -168,6 +171,18 @@ export const Form = (props) => {
+@@ -168,6 +182,18 @@ export const Form = (props) => {
              </h3>
              
              <div class="space-y-4">
@@ -520,7 +594,7 @@ index 31218b9..1f18111 100644
                <label class="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
                  <span class="font-medium text-gray-700 dark:text-gray-300">{t('groupByCountry')}</span>
                  <div class="relative inline-flex items-center cursor-pointer">
-@@ -220,9 +235,20 @@ export const Form = (props) => {
+@@ -220,9 +246,20 @@ export const Form = (props) => {
    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
      <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-2">
        <i class="fas fa-file-export text-gray-400"></i>
@@ -542,7 +616,7 @@ index 31218b9..1f18111 100644
      <div class="px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
        <p class="font-mono text-sm text-gray-600 dark:text-gray-400 break-all" x-text="getSubconverterUrl()"></p>
      </div>
-@@ -230,7 +256,8 @@ export const Form = (props) => {
+@@ -230,7 +267,8 @@ export const Form = (props) => {
        <button
          type="button"
          x-on:click="copySubconverterUrl()"
@@ -552,7 +626,7 @@ index 31218b9..1f18111 100644
          x-bind:class="subconverterCopied ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
        >
          <i class="fas" x-bind:class="subconverterCopied ? 'fa-check' : 'fa-copy'"></i>
-@@ -342,7 +369,7 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
+@@ -342,7 +380,7 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
        </form>
  
    {/* Results Section */ }
@@ -561,7 +635,7 @@ index 31218b9..1f18111 100644
      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-8 transition-all duration-300 hover:shadow-md">
        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
          <h2 class="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-@@ -354,6 +381,11 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
+@@ -354,6 +392,11 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
        </div>
  
        <div class="mt-6 space-y-4">
@@ -573,7 +647,7 @@ index 31218b9..1f18111 100644
          {LINK_FIELDS.map((field) => (
            <div class="relative group" key={field.key}>
              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-@@ -361,24 +393,30 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
+@@ -361,24 +404,30 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
              </label>
              <div class="flex gap-2">
                <input
@@ -611,7 +685,7 @@ index 31218b9..1f18111 100644
              </div>
            </div>
 diff --git a/src/components/formLogic.js b/src/components/formLogic.js
-index 57f401f..f15403d 100644
+index 57f401f..d34b712 100644
 --- a/src/components/formLogic.js
 +++ b/src/components/formLogic.js
 @@ -99,8 +99,17 @@ export const formLogicFn = (t) => {
@@ -632,7 +706,47 @@ index 57f401f..f15403d 100644
              shortenedLinks: null,
              shortening: false,
              customShortCode: '',
-@@ -136,6 +145,9 @@ export const formLogicFn = (t) => {
+@@ -113,6 +122,39 @@ export const formLogicFn = (t) => {
+             shorteningText: '',
+             showFullLinksText: '',
+ 
++            urlToImport: '',
++            urlImportMessage: '',
++            urlImportError: false,
++            urlImporting: false,
++            async importSubscriptionUrl() {
++                if (this.urlImporting) return;
++                this.urlImporting = true;
++                const text = this.urlToImport.trim();
++                this.urlImportMessage = '';
++                this.urlImportError = false;
++                try {
++                    if (!this.isSubscriptionUrl(text)) throw new Error('invalid');
++                    let url = new URL(text);
++                    if (/^\/([bcxs])\//.test(url.pathname)) {
++                        const response = await fetch(`/resolve?url=${encodeURIComponent(text)}`);
++                        if (!response.ok) throw new Error('resolve');
++                        url = new URL((await response.json()).originalUrl);
++                    }
++                    if (!/^\/(singbox|clash|xray|surge)$/.test(url.pathname) || !url.searchParams.get('config')) throw new Error('invalid');
++                    for (const key of ['selectedRules', 'customRules']) {
++                        if (url.searchParams.has(key) && !Array.isArray(JSON.parse(url.searchParams.get(key)))) throw new Error('invalid');
++                    }
++                    if (this.urlToImport.trim() !== text) return;
++                    this.resetLinkResults();
++                    this.populateFormFromUrl(url);
++                    this.urlImportMessage = window.APP_TRANSLATIONS.urlImportSuccess;
++                } catch {
++                    this.urlImportError = true;
++                    this.urlImportMessage = window.APP_TRANSLATIONS.urlImportFailure;
++                } finally {
++                    this.urlImporting = false;
++                }
++            },
+             init() {
+                 // Load translations
+                 if (window.APP_TRANSLATIONS) {
+@@ -136,6 +178,9 @@ export const formLogicFn = (t) => {
                  this.externalController = localStorage.getItem('externalController') || '';
                  this.externalUiDownloadUrl = localStorage.getItem('externalUiDownloadUrl') || '';
                  this.customUA = localStorage.getItem('userAgent') || '';
@@ -642,7 +756,7 @@ index 57f401f..f15403d 100644
                  this.configEditor = localStorage.getItem('configEditor') || '';
                  this.configType = localStorage.getItem('configType') || 'singbox';
                  this.customShortCode = localStorage.getItem('customShortCode') || '';
-@@ -162,6 +174,9 @@ export const formLogicFn = (t) => {
+@@ -162,6 +207,9 @@ export const formLogicFn = (t) => {
                  });
                  this.$watch('showAdvanced', val => localStorage.setItem('advancedToggle', val));
                  this.$watch('groupByCountry', val => localStorage.setItem('groupByCountry', val));
@@ -652,7 +766,7 @@ index 57f401f..f15403d 100644
                  this.$watch('includeAutoSelect', val => localStorage.setItem('includeAutoSelect', val));
                  this.$watch('enableClashUI', val => localStorage.setItem('enableClashUI', val));
                  this.$watch('externalController', val => localStorage.setItem('externalController', val));
-@@ -194,6 +209,7 @@ export const formLogicFn = (t) => {
+@@ -194,6 +242,7 @@ export const formLogicFn = (t) => {
              },
  
              getSubconverterUrl() {
@@ -660,7 +774,7 @@ index 57f401f..f15403d 100644
                  const origin = window.location.origin;
                  const params = new URLSearchParams();
  
-@@ -233,6 +249,7 @@ export const formLogicFn = (t) => {
+@@ -233,6 +282,7 @@ export const formLogicFn = (t) => {
  
              copySubconverterUrl() {
                  const url = this.getSubconverterUrl();
@@ -668,7 +782,7 @@ index 57f401f..f15403d 100644
                  navigator.clipboard.writeText(url).then(() => {
                      this.subconverterCopied = true;
                      setTimeout(() => this.subconverterCopied = false, 2000);
-@@ -344,14 +361,64 @@ export const formLogicFn = (t) => {
+@@ -344,14 +394,64 @@ export const formLogicFn = (t) => {
              clearAll() {
                  if (confirm(window.APP_TRANSLATIONS.confirmClearAll)) {
                      this.input = '';
@@ -735,7 +849,7 @@ index 57f401f..f15403d 100644
              updateConfigIdInUrl(configId) {
                  const url = new URL(window.location.href);
                  if (configId) {
-@@ -364,8 +431,19 @@ export const formLogicFn = (t) => {
+@@ -364,8 +464,19 @@ export const formLogicFn = (t) => {
  
              async submitForm() {
                  this.loading = true;
@@ -756,7 +870,7 @@ index 57f401f..f15403d 100644
                      // Get custom rules from the child component via the hidden input
                      const customRulesInput = document.querySelector('input[name="customRules"]');
                      const customRules = customRulesInput && customRulesInput.value ? JSON.parse(customRulesInput.value) : [];
-@@ -391,14 +469,23 @@ export const formLogicFn = (t) => {
+@@ -391,14 +502,23 @@ export const formLogicFn = (t) => {
                          params.append('configId', configId);
                      }
  
@@ -782,7 +896,7 @@ index 57f401f..f15403d 100644
  
                      // Scroll to results
                      setTimeout(() => {
-@@ -428,6 +515,9 @@ export const formLogicFn = (t) => {
+@@ -428,6 +548,9 @@ export const formLogicFn = (t) => {
                  }
  
                  this.shortening = true;
@@ -792,7 +906,7 @@ index 57f401f..f15403d 100644
                  try {
                      const origin = window.location.origin;
                      const shortened = {};
-@@ -437,7 +527,8 @@ export const formLogicFn = (t) => {
+@@ -437,7 +560,8 @@ export const formLogicFn = (t) => {
                      let isFirstRequest = true;
  
                      // Shorten each link type
@@ -802,7 +916,7 @@ index 57f401f..f15403d 100644
                          try {
                              let apiUrl = `${origin}/shorten-v2?url=${encodeURIComponent(url)}`;
  
-@@ -448,6 +539,7 @@ export const formLogicFn = (t) => {
+@@ -448,6 +572,7 @@ export const formLogicFn = (t) => {
                              }
  
                              const response = await fetch(apiUrl);
@@ -810,7 +924,7 @@ index 57f401f..f15403d 100644
                              if (!response.ok) {
                                  throw new Error(`Failed to shorten ${type} link`);
                              }
-@@ -475,12 +567,13 @@ export const formLogicFn = (t) => {
+@@ -475,12 +600,13 @@ export const formLogicFn = (t) => {
                          }
                      }
  
@@ -826,7 +940,15 @@ index 57f401f..f15403d 100644
                  }
              },
  
-@@ -536,6 +629,7 @@ export const formLogicFn = (t) => {
+@@ -511,6 +637,7 @@ export const formLogicFn = (t) => {
+ 
+                 try {
+                     const url = new URL(text);
++                    if (!['http:', 'https:'].includes(url.protocol)) return false;
+                     // Check if it matches our short link pattern: /[bcxs]/[code]
+                     const pathMatch = url.pathname.match(/^\/([bcxs])\/([a-zA-Z0-9_-]+)$/);
+                     if (pathMatch) {
+@@ -536,6 +663,7 @@ export const formLogicFn = (t) => {
                  }
  
                  this.parsingUrl = true;
@@ -834,7 +956,7 @@ index 57f401f..f15403d 100644
                  try {
                      let urlToParse;
  
-@@ -566,6 +660,7 @@ export const formLogicFn = (t) => {
+@@ -566,6 +694,7 @@ export const formLogicFn = (t) => {
                      }
  
                      // Now parse the full URL and populate form
@@ -842,7 +964,41 @@ index 57f401f..f15403d 100644
                      this.populateFormFromUrl(urlToParse);
  
                      // Show a success message
-@@ -635,6 +730,9 @@ export const formLogicFn = (t) => {
+@@ -582,6 +711,16 @@ export const formLogicFn = (t) => {
+             // Populate form fields from parsed URL
+             populateFormFromUrl(url) {
+                 const params = new URLSearchParams(url.search);
++                this.customUA = params.get('ua') || '';
++                this.externalController = params.get('external_controller') || '';
++                this.externalUiDownloadUrl = params.get('external_ui_download_url') || '';
++                this.autoExcludeNodes = params.get('auto_exclude') ?? 'US-LAX|JP-TYO|TW-TPE|KR-INC';
++                this.currentConfigId = params.get('configId') || '';
++                this.updateConfigIdInUrl(this.currentConfigId);
++                if (!params.has('selectedRules')) {
++                    this.selectedPredefinedRule = 'balanced';
++                    this.applyPredefinedRule();
++                }
+ 
+                 // Extract config (the original subscription URLs)
+                 const config = params.get('config');
+@@ -608,7 +747,7 @@ export const formLogicFn = (t) => {
+                 if (customRules) {
+                     try {
+                         const parsed = JSON.parse(customRules);
+-                        if (Array.isArray(parsed) && parsed.length > 0) {
++                        if (Array.isArray(parsed)) {
+                             // Dispatch custom event for CustomRules component to listen
+                             window.dispatchEvent(new CustomEvent('restore-custom-rules', {
+                                 detail: { rules: parsed }
+@@ -620,6 +759,7 @@ export const formLogicFn = (t) => {
+                 }
+ 
+                 // Extract other parameters
++                if (!customRules) window.dispatchEvent(new CustomEvent('restore-custom-rules', { detail: { rules: [] } }));
+                 this.groupByCountry = params.get('group_by_country') === 'true';
+                 this.includeAutoSelect = params.get('include_auto_select') !== 'false';
+                 this.enableClashUI = params.get('enable_clash_ui') === 'true';
+@@ -635,6 +775,9 @@ export const formLogicFn = (t) => {
                  }
  
                  const ua = params.get('ua');
@@ -852,7 +1008,7 @@ index 57f401f..f15403d 100644
                  if (ua) {
                      this.customUA = ua;
                  }
-@@ -647,7 +745,7 @@ export const formLogicFn = (t) => {
+@@ -647,7 +790,7 @@ export const formLogicFn = (t) => {
  
                  // Expand advanced options if any advanced settings are present
                  if (selectedRules || customRules || this.groupByCountry || this.enableClashUI ||
@@ -861,11 +1017,76 @@ index 57f401f..f15403d 100644
                      this.showAdvanced = true;
                  }
              }
+diff --git a/src/config/index.js b/src/config/index.js
+index ac98dc4..9738cc1 100644
+--- a/src/config/index.js
++++ b/src/config/index.js
+@@ -19,6 +19,7 @@ export {
+ 	UNIFIED_RULES,
+ 	PREDEFINED_RULE_SETS,
+ 	DIRECT_DEFAULT_RULES,
++	REJECT_ACTION_RULES,
+ 	SITE_RULE_SETS,
+ 	IP_RULE_SETS,
+ 	CLASH_SITE_RULE_SETS,
+diff --git a/src/config/rules.js b/src/config/rules.js
+index 944bc30..9ff12be 100644
+--- a/src/config/rules.js
++++ b/src/config/rules.js
+@@ -100,6 +100,7 @@ export const UNIFIED_RULES = [
+ 
+ // Rule names that should default to DIRECT instead of Node Select
+ export const DIRECT_DEFAULT_RULES = new Set(['Private', 'Location:CN']);
++export const REJECT_ACTION_RULES = new Set(['Ad Block']);
+ 
+ export const PREDEFINED_RULE_SETS = {
+ 	minimal: ['Location:CN', 'Private', 'Non-China'],
+diff --git a/src/config/singboxConfig.js b/src/config/singboxConfig.js
+index 53b8ebc..9bbbea1 100644
+--- a/src/config/singboxConfig.js
++++ b/src/config/singboxConfig.js
+@@ -56,8 +56,7 @@ export const SING_BOX_CONFIG = {
+ 				rcode: "REFUSED"
+ 			}
+ 		],
+-		final: "dns_direct",
+-		independent_cache: true
++		final: "dns_direct"
+ 	},
+ 	ntp: {
+ 		enabled: true,
+@@ -70,7 +69,6 @@ export const SING_BOX_CONFIG = {
+ 		{ type: 'tun', tag: 'tun-in', address: '172.19.0.1/30', auto_route: true, strict_route: true, stack: 'mixed' }
+ 	],
+ 	outbounds: [
+-		{ type: 'block', tag: 'REJECT' },
+ 		{ type: "direct", tag: 'DIRECT' }
+ 	],
+ 	route: {
+@@ -162,7 +160,6 @@ export const SING_BOX_CONFIG_V1_11 = {
+ 		{ type: 'tun', tag: 'tun-in', address: '172.19.0.1/30', auto_route: true, strict_route: true, stack: 'mixed' }
+ 	],
+ 	outbounds: [
+-		{ type: 'block', tag: 'REJECT' },
+ 		{ type: "direct", tag: 'DIRECT' }
+ 	],
+ 	route: {
 diff --git a/src/i18n/index.js b/src/i18n/index.js
-index 84ad13e..a02006b 100644
+index 84ad13e..ac4ca05 100644
 --- a/src/i18n/index.js
 +++ b/src/i18n/index.js
-@@ -29,6 +29,16 @@ export const translations = {
+@@ -4,6 +4,10 @@ import { checkStartsWith } from "../utils.js";
+ // 定义语言包
+ export const translations = {
+   'zh-CN': {
++    urlImportTitle: '从 URL 解析',
++    urlImportHelp: '粘贴 Sublink Worker 转换链接或本站短链接，还原订阅源和配置。解析后可修改设置并重新转换。',
++    urlImportSuccess: '已还原订阅源和配置，请检查后重新转换。',
++    urlImportFailure: '解析失败，请检查是否为有效的 Sublink Worker 转换链接或本站短链接。',
+     enableClashUI: '启用 Clash API',
+     enableClashUITip: '在 SingBox 配置中启用 Clash API (支持 Dashboard 面板)，默认端口 9090',
+     externalController: '外部控制端口',
+@@ -29,6 +33,16 @@ export const translations = {
      shareUrls: '输入源',
      urlPlaceholder: '支持粘贴：分享链接、Clash 配置、Sing-Box 配置、Surge 配置...',
      advancedOptions: '高级选项',
@@ -882,7 +1103,7 @@ index 84ad13e..a02006b 100644
      baseConfigSettings: '基础配置设置',
      baseConfigTooltip: '在此处自定义您的基础配置',
      saveConfig: '保存配置',
-@@ -50,7 +60,7 @@ export const translations = {
+@@ -50,7 +64,7 @@ export const translations = {
      ruleSelectionTooltip: '选择您需要的规则集',
      copySubconverterUrl: '复制配置地址',
      copiedSubconverterUrl: '已复制！',
@@ -891,7 +1112,7 @@ index 84ad13e..a02006b 100644
      subconverterConfigDesc: '根据上方选择的规则和设置，生成 Subconverter 外部配置地址，可直接用于 Subconverter 的 config 参数。',
      custom: '自定义',
      minimal: '最小化',
-@@ -144,6 +154,10 @@ export const translations = {
+@@ -144,6 +158,10 @@ export const translations = {
      clashLink: 'Clash 链接',
      surgeLink: 'Surge 链接',
      copied: '已复制！',
@@ -902,7 +1123,18 @@ index 84ad13e..a02006b 100644
      shortening: '正在生成短链接...',
      alreadyShortened: '链接已经是短链接了！',
      shortenFailed: '生成短链接失败，请重试',
-@@ -192,6 +206,16 @@ export const translations = {
+@@ -167,6 +185,10 @@ export const translations = {
+     later: '稍后'
+   },
+   'en-US': {
++    urlImportTitle: 'Parse from URL',
++    urlImportHelp: 'Paste a Sublink Worker conversion URL or a short link from this instance to restore sources and settings.',
++    urlImportSuccess: 'Sources and settings restored. Review them and convert again.',
++    urlImportFailure: 'Unable to parse this link. Use a valid Sublink Worker conversion URL or a short link from this instance.',
+     enableClashUI: 'Enable Clash API',
+     enableClashUITip: 'Enable Clash API in SingBox config (Support Dashboard), default port 9090',
+     externalController: 'External Controller',
+@@ -192,6 +214,16 @@ export const translations = {
      shareUrls: 'Input Source',
      urlPlaceholder: 'Paste share links, Clash config, Sing-Box config, or Surge config...',
      advancedOptions: 'Advanced Options',
@@ -919,7 +1151,7 @@ index 84ad13e..a02006b 100644
      baseConfigSettings: 'Base Config Settings',
      baseConfigTooltip: 'Customize your base configuration here',
      saveConfig: 'Save Config',
-@@ -213,7 +237,7 @@ export const translations = {
+@@ -213,7 +245,7 @@ export const translations = {
      ruleSelectionTooltip: 'Select your desired rule sets',
      copySubconverterUrl: 'Copy Config URL',
      copiedSubconverterUrl: 'Copied!',
@@ -928,7 +1160,7 @@ index 84ad13e..a02006b 100644
      subconverterConfigDesc: 'Generate a Subconverter external config URL based on the rules and settings above, for use as the config parameter in Subconverter.',
      custom: 'Custom',
      minimal: 'Minimal',
-@@ -306,6 +330,10 @@ export const translations = {
+@@ -306,6 +338,10 @@ export const translations = {
      clashLink: 'Clash Link',
      surgeLink: 'Surge Link',
      copied: 'Copied!',
@@ -939,7 +1171,18 @@ index 84ad13e..a02006b 100644
      shortening: 'Shortening...',
      alreadyShortened: 'Links are already shortened!',
      shortenFailed: 'Failed to shorten URLs. Please try again.',
-@@ -348,6 +376,16 @@ export const translations = {
+@@ -329,6 +365,10 @@ export const translations = {
+     later: 'Later'
+   },
+   'fa': {
++    urlImportTitle: 'بازیابی از URL',
++    urlImportHelp: 'پیوند تبدیل Sublink Worker یا پیوند کوتاه این سرویس را برای بازیابی تنظیمات وارد کنید.',
++    urlImportSuccess: 'تنظیمات بازیابی شد. پس از بررسی دوباره تبدیل کنید.',
++    urlImportFailure: 'پیوند معتبر Sublink Worker یا پیوند کوتاه این سرویس را وارد کنید.',
+     missingInput: 'پارامتر ورودی وجود ندارد',
+     missingConfig: 'پارامتر پیکربندی وجود ندارد',
+     missingUrl: 'پارامتر URL وجود ندارد',
+@@ -348,6 +388,16 @@ export const translations = {
      shareUrls: 'منبع ورودی',
      urlPlaceholder: 'لینک‌های اشتراک، پیکربندی Clash، Sing-Box یا Surge را جایگذاری کنید...',
      advancedOptions: 'گزینه‌های پیشرفته',
@@ -956,7 +1199,7 @@ index 84ad13e..a02006b 100644
      baseConfigSettings: 'تنظیمات پیکربندی پایه',
      baseConfigTooltip: 'پیکربندی پایه خود را اینجا سفارشی کنید',
      saveConfig: 'ذخیره پیکربندی',
-@@ -369,7 +407,7 @@ export const translations = {
+@@ -369,7 +419,7 @@ export const translations = {
      ruleSelectionTooltip: 'مجموعه قوانین مورد نظر خود را انتخاب کنید',
      copySubconverterUrl: 'کپی آدرس پیکربندی',
      copiedSubconverterUrl: 'کپی شد!',
@@ -965,7 +1208,7 @@ index 84ad13e..a02006b 100644
      subconverterConfigDesc: 'آدرس پیکربندی خارجی Subconverter را بر اساس قوانین و تنظیمات بالا ایجاد کنید.',
      custom: 'سفارشی',
      minimal: 'حداقل',
-@@ -462,6 +500,10 @@ export const translations = {
+@@ -462,6 +512,10 @@ export const translations = {
      clashLink: 'لینک Clash',
      surgeLink: 'لینک Surge',
      copied: 'کپی شد!',
@@ -976,7 +1219,18 @@ index 84ad13e..a02006b 100644
      shortening: 'در حال کوتاه کردن...',
      alreadyShortened: 'لینک‌ها از قبل کوتاه شده‌اند!',
      shortenFailed: 'کوتاه کردن URL ناموفق بود. لطفاً دوباره تلاش کنید.',
-@@ -504,6 +546,16 @@ export const translations = {
+@@ -485,6 +539,10 @@ export const translations = {
+     later: 'بعداً'
+   },
+   'ru': {
++    urlImportTitle: 'Разобрать URL',
++    urlImportHelp: 'Вставьте ссылку конвертации Sublink Worker или короткую ссылку этого сервиса, чтобы восстановить настройки.',
++    urlImportSuccess: 'Источники и настройки восстановлены. Проверьте их и повторите конвертацию.',
++    urlImportFailure: 'Не удалось разобрать ссылку. Используйте ссылку Sublink Worker или короткую ссылку этого сервиса.',
+     missingInput: 'Отсутствует входной параметр',
+     missingConfig: 'Отсутствует параметр конфигурации',
+     missingUrl: 'Отсутствует параметр URL',
+@@ -504,6 +562,16 @@ export const translations = {
      shareUrls: 'Источник ввода',
      urlPlaceholder: 'Вставьте ссылки, конфигурацию Clash, Sing-Box или Surge...',
      advancedOptions: 'Расширенные настройки',
@@ -993,7 +1247,7 @@ index 84ad13e..a02006b 100644
      baseConfigSettings: 'Базовые настройки конфигурации',
      baseConfigTooltip: 'Настройте базовую конфигурацию здесь',
      saveConfig: 'Сохранить конфигурацию',
-@@ -525,7 +577,7 @@ export const translations = {
+@@ -525,7 +593,7 @@ export const translations = {
      ruleSelectionTooltip: 'Выберите нужные наборы правил',
      copySubconverterUrl: 'Скопировать URL',
      copiedSubconverterUrl: 'Скопировано!',
@@ -1002,7 +1256,7 @@ index 84ad13e..a02006b 100644
      subconverterConfigDesc: 'Создайте URL внешней конфигурации Subconverter на основе выбранных правил и настроек выше.',
      custom: 'Пользовательский',
      minimal: 'Минимальный',
-@@ -618,6 +670,10 @@ export const translations = {
+@@ -618,6 +686,10 @@ export const translations = {
      clashLink: 'Ссылка Clash',
      surgeLink: 'Ссылка Surge',
      copied: 'Скопировано!',
@@ -1438,6 +1692,97 @@ index 2d3d418..995b86e 100644
          });
  
          it('should still include country groups in Node Select when groupByCountry is enabled', async () => {
+diff --git a/test/issue-362-subscription-userinfo.test.js b/test/issue-362-subscription-userinfo.test.js
+new file mode 100644
+index 0000000..d7c9ede
+--- /dev/null
++++ b/test/issue-362-subscription-userinfo.test.js
+@@ -0,0 +1,73 @@
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { createApp } from '../src/app/createApp.jsx';
++import { MemoryKVAdapter } from '../src/adapters/kv/memoryKv.js';
++import { decodeBase64 } from '../src/utils.js';
++
++const subscriptionUserinfo = 'upload=123; download=456; total=1024; expire=1893456000';
++const remoteSubscriptionUrl = 'https://airport.example.com/sub?token=abc';
++const proxyUri = 'ss://YWVzLTEyOC1nY206cGFzcw@example.com:443#Issue362';
++
++function createTestApp() {
++    return createApp({
++        kv: new MemoryKVAdapter(),
++        assetFetcher: null,
++        logger: console,
++        config: {
++            configTtlSeconds: 60,
++            shortLinkTtlSeconds: null
++        }
++    });
++}
++
++function mockRemoteSubscription() {
++    vi.stubGlobal('fetch', vi.fn(async () => ({
++        ok: true,
++        status: 200,
++        text: async () => proxyUri,
++        headers: {
++            get: (name) => name.toLowerCase() === 'subscription-userinfo'
++                ? subscriptionUserinfo
++                : null
++        }
++    })));
++}
++
++describe('Issue #362 - subscription userinfo passthrough', () => {
++    afterEach(() => {
++        vi.unstubAllGlobals();
++    });
++
++    it('preserves subscription-userinfo when converting remote subscriptions to Clash', async () => {
++        mockRemoteSubscription();
++        const app = createTestApp();
++
++        const res = await app.request(`http://localhost/clash?config=${encodeURIComponent(remoteSubscriptionUrl)}`);
++
++        expect(res.status).toBe(200);
++        expect(res.headers.get('subscription-userinfo')).toBe(subscriptionUserinfo);
++        expect(await res.text()).toContain('Issue362');
++    });
++
++    it('preserves subscription-userinfo when converting remote subscriptions to Sing-Box', async () => {
++        mockRemoteSubscription();
++        const app = createTestApp();
++
++        const res = await app.request(`http://localhost/singbox?config=${encodeURIComponent(remoteSubscriptionUrl)}`);
++
++        expect(res.status).toBe(200);
++        expect(res.headers.get('subscription-userinfo')).toBe(subscriptionUserinfo);
++        const json = await res.json();
++        expect(json.outbounds.some(outbound => outbound.tag === 'Issue362')).toBe(true);
++    });
++
++    it('preserves subscription-userinfo when converting remote subscriptions to Xray', async () => {
++        mockRemoteSubscription();
++        const app = createTestApp();
++
++        const res = await app.request(`http://localhost/xray?config=${encodeURIComponent(remoteSubscriptionUrl)}`);
++
++        expect(res.status).toBe(200);
++        expect(res.headers.get('subscription-userinfo')).toBe(subscriptionUserinfo);
++        expect(decodeBase64(await res.text())).toBe(proxyUri);
++    });
++});
+diff --git a/test/issue-366-empty-auto-select.test.js b/test/issue-366-empty-auto-select.test.js
+index eec1e73..1e85e5f 100644
+--- a/test/issue-366-empty-auto-select.test.js
++++ b/test/issue-366-empty-auto-select.test.js
+@@ -21,6 +21,6 @@ describe('Issue #366 - avoid empty Auto Select groups', () => {
+         expect(autoSelect).toBeUndefined();
+         expect(nodeSelect).toBeDefined();
+         expect(nodeSelect.outbounds).not.toContain('⚡ 自动选择');
+-        expect(nodeSelect.outbounds).toEqual(['DIRECT', 'REJECT']);
++        expect(nodeSelect.outbounds).toEqual(['DIRECT']);
+     });
+ });
 diff --git a/test/issue-371-custom-rule-options.test.js b/test/issue-371-custom-rule-options.test.js
 index 7388bbe..654709e 100644
 --- a/test/issue-371-custom-rule-options.test.js
@@ -1710,4 +2055,128 @@ index 0000000..e1d751b
 +        expect(response.status).toBe(200);
 +        expect(response.headers.get('subscription-userinfo')).toBe('upload=1; download=2; total=3');
 +    });
++});
+diff --git a/test/singbox-legacy-inbound.test.js b/test/singbox-legacy-inbound.test.js
+index 9898307..fa03be1 100644
+--- a/test/singbox-legacy-inbound.test.js
++++ b/test/singbox-legacy-inbound.test.js
+@@ -24,6 +24,7 @@ const sampleInput = JSON.stringify({
+ });
+ 
+ const LEGACY_INBOUND_FIELDS = ['sniff', 'sniff_timeout', 'sniff_override_destination', 'domain_strategy', 'udp_disable_domain_unmapping'];
++const LEGACY_SPECIAL_OUTBOUNDS = ['block', 'dns'];
+ 
+ describe('sing-box 1.13+ compatibility: no legacy inbound fields', () => {
+     it('SING_BOX_CONFIG inbounds should not contain legacy fields', () => {
+@@ -42,6 +43,14 @@ describe('sing-box 1.13+ compatibility: no legacy inbound fields', () => {
+         }
+     });
+ 
++    it('base configs should not contain legacy special outbounds', () => {
++        for (const config of [SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11]) {
++            const outboundTypes = config.outbounds.map(outbound => outbound.type);
++            expect(outboundTypes).not.toContain('block');
++            expect(outboundTypes).not.toContain('dns');
++        }
++    });
++
+     it('built config (v1.12) should have sniff as route rule action, not on inbounds', async () => {
+         const builder = new SingboxConfigBuilder(
+             sampleInput, [], [], null, 'zh-CN', null, false
+@@ -75,9 +84,12 @@ describe('sing-box 1.13+ compatibility: no legacy inbound fields', () => {
+ 
+         const sniffRule = result.route.rules.find(r => r.action === 'sniff');
+         expect(sniffRule).toBeDefined();
++
++        const legacyOutbounds = result.outbounds.filter(outbound => LEGACY_SPECIAL_OUTBOUNDS.includes(outbound.type));
++        expect(legacyOutbounds).toEqual([]);
+     });
+ 
+-    it('should not reintroduce legacy fields when user provides custom base config with sniff on inbound', async () => {
++    it('should not reintroduce legacy fields or special outbounds from custom base config', async () => {
+         // Simulate a user-provided base config that still has legacy sniff field
+         const customBaseConfig = {
+             inbounds: [
+@@ -99,5 +111,21 @@ describe('sing-box 1.13+ compatibility: no legacy inbound fields', () => {
+         // Route rules must still have sniff action
+         const sniffRule = result.route.rules.find(r => r.action === 'sniff');
+         expect(sniffRule).toBeDefined();
++
++        const legacyOutbounds = result.outbounds.filter(outbound => LEGACY_SPECIAL_OUTBOUNDS.includes(outbound.type));
++        expect(legacyOutbounds).toEqual([]);
++        expect(result.outbounds.flatMap(outbound => outbound.outbounds || [])).not.toContain('REJECT');
++    });
++
++    it('should emit reject action for ad blocking rules instead of REJECT outbound', async () => {
++        const builder = new SingboxConfigBuilder(
++            sampleInput, ['Ad Block'], [], null, 'zh-CN', null, false
++        );
++        const result = await builder.build();
++
++        const rejectRule = result.route.rules.find(rule => rule.rule_set?.includes('category-ads-all'));
++        expect(rejectRule).toMatchObject({ action: 'reject' });
++        expect(rejectRule).not.toHaveProperty('outbound');
++        expect(result.outbounds.some(outbound => outbound.tag === '🛑 广告拦截')).toBe(false);
+     });
+ });
+diff --git a/test/url-import.test.js b/test/url-import.test.js
+new file mode 100644
+index 0000000..467cf7b
+--- /dev/null
++++ b/test/url-import.test.js
+@@ -0,0 +1,55 @@
++import { describe, it, expect, vi } from 'vitest';
++import { formLogicFn } from '../src/components/formLogic.js';
++
++const setup = (fetch = vi.fn()) => {
++  const events = [];
++  const window = { APP_TRANSLATIONS: { urlImportSuccess: 'success', urlImportFailure: 'failure' }, PREDEFINED_RULE_SETS: { balanced: ['Private'] }, location: { href: 'https://example.com/?configId=old' }, history: { replaceState: vi.fn() }, dispatchEvent: event => events.push(event) };
++  const run = new Function('window', 'fetch', 'CustomEvent', `(${formLogicFn.toString()})(); return window.formData();`);
++  const data = run(window, fetch, class { constructor(type, value) { this.type = type; this.detail = value.detail; } });
++  return { data, events };
++};
++describe('explicit URL import', () => {
++  for (const format of ['clash', 'singbox', 'surge', 'xray']) {
++    it(`restores ${format} settings and clears stale configuration`, async () => {
++      const { data, events } = setup();
++      const params = new URLSearchParams({ config: 'https://source.example/sub?token=a%2Bb\nss://sample', selectedRules: '["Youtube"]', customRules: '[]', auto_exclude: '', exclude: 'US|JP', group_by_country: 'true' });
++      data.urlToImport = `https://worker.example/${format}?${params}`;
++      data.customUA = 'old'; data.remoteConfigUrl = 'https://old.example/config'; data.generatedLinks = { clash: 'old' };
++      await data.importSubscriptionUrl();
++      expect(data.input).toBe(params.get('config'));
++      expect(data.selectedRules).toEqual(['Youtube']);
++      expect(data.groupByCountry).toBe(true);
++      expect(data.autoExcludeNodes).toBe('');
++      expect(data.excludeNodes).toBe('US|JP');
++      expect(data.customUA).toBe(''); expect(data.remoteConfigUrl).toBe('');
++      expect(data.currentConfigId).toBe('');
++      expect(data.generatedLinks).toBeNull();
++      expect(events.at(-1).detail.rules).toEqual([]);
++      expect(data.urlImportMessage).toBe('success');
++    });
++  }
++  it('resolves instance short links and restores remote config', async () => {
++    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ originalUrl: 'https://example.com/clash?config=source&remote_config=https%3A%2F%2Fremote.example%2Fa.ini' }) });
++    const { data } = setup(fetch);
++    data.urlToImport = 'https://example.com/c/code';
++    await data.importSubscriptionUrl();
++    expect(fetch).toHaveBeenCalledWith('/resolve?url=https%3A%2F%2Fexample.com%2Fc%2Fcode');
++    expect(data.remoteConfigUrl).toBe('https://remote.example/a.ini');
++    expect(data.selectedRules).toEqual(['Private']);
++  });
++  for (const url of ['ftp://example.com/clash?config=x', 'https://example.com/clash', 'https://example.com/clash?config=x&selectedRules=%7B%7D']) {
++    it(`leaves the form unchanged for invalid input ${url}`, async () => {
++      const { data } = setup(); data.input = 'original'; data.urlToImport = url;
++      await data.importSubscriptionUrl();
++      expect(data.input).toBe('original'); expect(data.urlImportError).toBe(true);
++    });
++  }
++  it('ignores delayed short-link responses after the import URL changes', async () => {
++    let finish;
++    const { data } = setup(() => new Promise(resolve => { finish = resolve; }));
++    data.input = 'original'; data.urlToImport = 'https://example.com/c/code';
++    const pending = data.importSubscriptionUrl(); data.urlToImport = 'changed';
++    finish({ ok: true, json: async () => ({ originalUrl: 'https://example.com/clash?config=old' }) });
++    await pending; expect(data.input).toBe('original');
++  });
 +});
